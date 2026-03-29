@@ -1,0 +1,29 @@
+{
+  "name": "pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@tonejs/midi": "^2.0.28",
+    "@zen/midi-to-vp": "*",
+    "commander": "^13.1.0",
+    "drizzle-orm": "^0.44.5",
+    "openai": "^6.7.0",
+    "pg-boss": "^9.0.3",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.4.0",
+    "@vitest/coverage-v8": "^3.0.5",
+    "@zen/tsconfig": "*",
+    "typescript": "^5.9.2",
+    "vitest": "^3.0.5"
+  }
+}

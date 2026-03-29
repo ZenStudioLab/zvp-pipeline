@@ -1,0 +1,133 @@
+import { describe, expect, it } from 'vitest';
+
+import { publishSheet } from '../../src/stages/publisher';
+
+function createPublisherInput(overrides: Partial<Parameters<typeof publishSheet>[0]> = {}): Parameters<typeof publishSheet>[0] {
+  return {
+    title: 'Interstellar Main Theme OST',
+    slug: 'interstellar-main-theme-ost-hans-zimmer',
+    artist: { id: 'artist_1', slug: 'hans-zimmer', name: 'Hans Zimmer' },
+    genre: { id: 'genre_1', slug: 'soundtrack', name: 'Soundtrack' },
+    difficulty: { id: 'difficulty_1', slug: 'advanced', label: 'Advanced', level: 3 },
+    thumbnailUrl: 'https://img.youtube.com/vi/zSWdZVtXT7E/hqdefault.jpg',
+    sheetData: '[tu]y--d',
+    bpm: 120,
+    durationSeconds: 90,
+    noteCount: 320,
+    notesPerSecond: 3.55,
+    qualityScore: 0.82,
+    confidenceScore: 0.91,
+    source: 'pipeline',
+    sourceUrl: 'https://example.com/interstellar.mid',
+    tips: ['Start slowly', 'Keep a steady left hand pulse'],
+    youtubeUrl: 'https://www.youtube.com/watch?v=zSWdZVtXT7E',
+    isCanonical: true,
+    canonicalSheetId: null,
+    normalizedKey: 'hans zimmer-interstellar main theme ost',
+    nextVersionCount: 1,
+    dryRun: false,
+    ...overrides,
+  };
+}
+
+describe('publishSheet', () => {
+  it('auto-publishes high-quality, high-confidence sheets and triggers revalidation', async () => {
+    const insertedSheets: Array<Record<string, unknown>> = [];
+    const fingerprintUpdates: Array<Record<string, unknown>> = [];
+    const revalidatedPaths: string[][] = [];
+
+    const result = await publishSheet(createPublisherInput(), {
+      insertSheet: async (sheet) => {
+        insertedSheets.push(sheet);
+        return { id: 'sheet_1', slug: String(sheet.slug) };
+      },
+      updateFingerprint: async (update) => {
+        fingerprintUpdates.push(update);
+      },
+      revalidatePaths: async (paths) => {
+        revalidatedPaths.push(paths);
+      },
+    });
+
+    expect(result.outcome).toBe('published');
+    expect(insertedSheets[0]).toEqual(expect.objectContaining({
+      isPublished: true,
+      needsReview: false,
+      qualityScore: 0.82,
+      metadataConfidence: 'high',
+      tips: ['Start slowly', 'Keep a steady left hand pulse'],
+    }));
+    expect(fingerprintUpdates[0]).toEqual(expect.objectContaining({
+      normalizedKey: 'hans zimmer-interstellar main theme ost',
+      canonicalSheetId: 'sheet_1',
+      versionCount: 1,
+    }));
+    expect(revalidatedPaths).toEqual([
+      ['/', '/catalog', '/artist/hans-zimmer', '/genre/soundtrack', '/sheet/interstellar-main-theme-ost-hans-zimmer'],
+    ]);
+  });
+
+  it('stores borderline sheets for review instead of auto-publishing them', async () => {
+    const insertedSheets: Array<Record<string, unknown>> = [];
+
+    const result = await publishSheet(createPublisherInput({ confidenceScore: 0.65 }), {
+      insertSheet: async (sheet) => {
+        insertedSheets.push(sheet);
+        return { id: 'sheet_review', slug: String(sheet.slug) };
+      },
+      updateFingerprint: async () => undefined,
+      revalidatePaths: async () => undefined,
+    });
+
+    expect(result.outcome).toBe('needs_review');
+    expect(insertedSheets[0]).toEqual(expect.objectContaining({
+      isPublished: false,
+      needsReview: true,
+      metadataConfidence: 'medium',
+    }));
+  });
+
+  it('rejects low-scoring sheets without writing to the database', async () => {
+    let insertCount = 0;
+
+    const result = await publishSheet(createPublisherInput({ qualityScore: 0.42, confidenceScore: 0.92 }), {
+      insertSheet: async () => {
+        insertCount += 1;
+        return { id: 'sheet_rejected', slug: 'nope' };
+      },
+      updateFingerprint: async () => undefined,
+      revalidatePaths: async () => undefined,
+    });
+
+    expect(result).toEqual({
+      outcome: 'rejected',
+      revalidatedPaths: [],
+      sheetId: null,
+    });
+    expect(insertCount).toBe(0);
+  });
+
+  it('skips writes and revalidation during dry runs', async () => {
+    let insertCount = 0;
+    let revalidateCount = 0;
+
+    const result = await publishSheet(createPublisherInput({ dryRun: true }), {
+      insertSheet: async () => {
+        insertCount += 1;
+        return { id: 'sheet_dry_run', slug: 'dry-run' };
+      },
+      updateFingerprint: async () => undefined,
+      revalidatePaths: async () => {
+        revalidateCount += 1;
+      },
+    });
+
+    expect(result).toEqual({
+      outcome: 'dry_run',
+      revalidatedPaths: [],
+      sheetId: null,
+    });
+    expect(insertCount).toBe(0);
+    expect(revalidateCount).toBe(0);
+  });
+});

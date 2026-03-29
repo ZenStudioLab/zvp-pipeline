@@ -1,0 +1,7 @@
+{
+  "extends": "@zen/tsconfig/node.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+}
