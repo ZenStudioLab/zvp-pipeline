@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "yarn --cwd ../packages/db build && tsc -p tsconfig.build.json",
     "type-check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tonejs/midi": "^2.0.28",
+    "@zen/db": "*",
     "@zen/midi-to-vp": "*",
     "commander": "^13.1.0",
     "drizzle-orm": "^0.44.5",
