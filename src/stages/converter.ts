@@ -1,13 +1,15 @@
-import { Midi } from '@tonejs/midi';
+import TonejsMidi from '@tonejs/midi';
 import { convertMidiToVp } from '@zen/midi-to-vp';
 
 import type { ConverterResult } from './types.js';
+
+const { Midi } = TonejsMidi;
 
 const MIN_VP_MIDI = 48;
 const MAX_VP_MIDI = 95;
 
 export function convertMidiSource(input: { file: Uint8Array | Buffer }): ConverterResult {
-  let midi: Midi;
+  let midi: InstanceType<typeof Midi>;
 
   try {
     midi = new Midi(input.file instanceof Uint8Array ? input.file : new Uint8Array(input.file));

@@ -1,7 +1,9 @@
-import { Midi } from '@tonejs/midi';
+import TonejsMidi from '@tonejs/midi';
 import { describe, expect, it } from 'vitest';
 
 import { convertMidiSource } from '../../src/stages/converter';
+
+const { Midi } = TonejsMidi;
 
 function createSingleTrackMidi(): Uint8Array {
   const midi = new Midi();

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Midi } from '@tonejs/midi';
+import TonejsMidi from '@tonejs/midi';
 
 import { evaluatePipelineStages } from '../../src/lib/run-stages.js';
+
+const { Midi } = TonejsMidi;
 
 function createMidiBuffer(): Uint8Array {
   const midi = new Midi();
