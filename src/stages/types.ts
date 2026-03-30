@@ -25,6 +25,17 @@ export type QualitySignalSet = {
   timingConsistency: number;
 };
 
+// QualitySignalContributions shares the same four fields as QualitySignalSet but represents
+// different semantics: signals are normalised [0,1] quality indicators, while contributions
+// are the weighted sub-scores that sum to the final quality score. Kept as separate types
+// to prevent future signal/weight divergence from quietly changing output semantics.
+export type QualitySignalContributions = {
+  inRangeRatio: number;
+  chordDensity: number;
+  noteDensity: number;
+  timingConsistency: number;
+};
+
 export type QualityScorerInput = {
   totalNotes: number;
   inRangeNotes: number;
@@ -39,6 +50,7 @@ export type QualityAssessment = {
   rubricVersion: string;
   scoreBand: QualityScoreBand;
   signals: QualitySignalSet;
+  contributions: QualitySignalContributions;
 };
 
 export type FingerprintRecord = {

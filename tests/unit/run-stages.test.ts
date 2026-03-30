@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import TonejsMidi from '@tonejs/midi';
 
+import { scoreConversionQuality } from '../../src/stages/quality-scorer.js';
 import { evaluatePipelineStages } from '../../src/lib/run-stages.js';
+
+// Wrap the real scorer in a spy so individual tests can inject a RangeError to verify
+// the invalid_quality_signals rejection path in evaluatePipelineStages.
+vi.mock('../../src/stages/quality-scorer.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/stages/quality-scorer.js')>();
+  return { ...actual, scoreConversionQuality: vi.fn(actual.scoreConversionQuality) };
+});
 
 const { Midi } = TonejsMidi;
 
@@ -45,5 +53,32 @@ describe('evaluatePipelineStages', () => {
 
     expect(result.ok).toBe(true);
     expect(createArtist).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid_quality_signals rejection when the scorer raises a RangeError', async () => {
+    vi.mocked(scoreConversionQuality).mockImplementationOnce(() => {
+      throw new RangeError('QualityScorerInput.inRangeNotes must be finite; received NaN');
+    });
+
+    const result = await evaluatePipelineStages(
+      {
+        rawTitle: 'Test Song',
+        rawArtist: 'Test Artist',
+        file: createMidiBuffer(),
+      },
+      {
+        genres: [{ id: 'genre_1', slug: 'classical', name: 'Classical' }],
+        difficulties: [{ id: 'difficulty_1', slug: 'beginner', label: 'Beginner', level: 1 }],
+        getExistingArtistNames: async () => [],
+        findArtistByNormalizedName: async () => null,
+        createArtist: vi.fn(async () => ({ id: 'a1', slug: 'test-artist', name: 'Test Artist' })),
+        findFingerprintByKey: async () => null,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.rejectionReason).toBe('invalid_quality_signals');
+    }
   });
 });

@@ -41,7 +41,7 @@ type StageEvaluationOptions = {
 export type FailedStageEvaluation = {
   ok: false;
   normalized: NormalizedMetadata;
-  rejectionReason: 'corrupted_midi' | 'empty_midi' | 'percussion_only';
+    rejectionReason: 'corrupted_midi' | 'empty_midi' | 'percussion_only' | 'invalid_quality_signals';
 };
 
 export type SuccessfulStageEvaluation = {
@@ -79,7 +79,20 @@ export async function evaluatePipelineStages(
     };
   }
 
-  const qualityAssessment = scoreConversionQuality(conversion.qualitySignals);
+  let qualityAssessment: QualityAssessment;
+  try {
+    qualityAssessment = scoreConversionQuality(conversion.qualitySignals);
+  } catch (err) {
+    if (err instanceof RangeError) {
+      return {
+        ok: false,
+        normalized,
+        rejectionReason: 'invalid_quality_signals',
+      };
+    }
+    throw err;
+  }
+
   const dedupDecision = await planDedupDecision(
     {
       normalizedKey: normalized.normalizedKey,

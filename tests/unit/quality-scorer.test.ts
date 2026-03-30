@@ -26,7 +26,7 @@ describe('scoreConversionQuality', () => {
 
   it('normalizes every scoring signal into the 0-1 range', () => {
     const result = scoreConversionQuality({
-      totalNotes: 48,
+      totalNotes: 80,
       inRangeNotes: 80,
       averageChordSize: 8,
       peakChordSize: 10,
@@ -109,5 +109,76 @@ describe('scoreConversionQuality', () => {
 
     expect(result.score).toBeLessThan(PIPELINE_THRESHOLDS.publish);
     expect(result.scoreBand).toBe('review');
+  });
+
+  describe('input validation', () => {
+    it('throws RangeError when a numeric field is NaN', () => {
+      expect(() =>
+        scoreConversionQuality({
+          totalNotes: 100,
+          inRangeNotes: NaN,
+          averageChordSize: 1.5,
+          peakChordSize: 3,
+          notesPerSecond: 4,
+          timingJitter: 0.05,
+        }),
+      ).toThrow(RangeError);
+    });
+
+    it('throws RangeError when a numeric field is Infinity', () => {
+      expect(() =>
+        scoreConversionQuality({
+          totalNotes: 100,
+          inRangeNotes: 80,
+          averageChordSize: Infinity,
+          peakChordSize: 3,
+          notesPerSecond: 4,
+          timingJitter: 0.05,
+        }),
+      ).toThrow(RangeError);
+    });
+
+    it('throws RangeError when inRangeNotes exceeds totalNotes', () => {
+      expect(() =>
+        scoreConversionQuality({
+          totalNotes: 50,
+          inRangeNotes: 80,
+          averageChordSize: 1.5,
+          peakChordSize: 3,
+          notesPerSecond: 4,
+          timingJitter: 0.05,
+        }),
+      ).toThrow(RangeError);
+    });
+
+    it('throws RangeError when averageChordSize is below 1 for a non-empty chart', () => {
+      expect(() =>
+        scoreConversionQuality({
+          totalNotes: 100,
+          inRangeNotes: 80,
+          averageChordSize: 0.5,
+          peakChordSize: 3,
+          notesPerSecond: 4,
+          timingJitter: 0.05,
+        }),
+      ).toThrow(RangeError);
+    });
+  });
+
+  it('contribution fields sum to the final score', () => {
+    const result = scoreConversionQuality({
+      totalNotes: 100,
+      inRangeNotes: 88,
+      averageChordSize: 1.5,
+      peakChordSize: 3,
+      notesPerSecond: 3.5,
+      timingJitter: 0.03,
+    });
+    const sum =
+      result.contributions.inRangeRatio +
+      result.contributions.chordDensity +
+      result.contributions.noteDensity +
+      result.contributions.timingConsistency;
+    expect(result.score).toBeCloseTo(sum, 10);
   });
 });
