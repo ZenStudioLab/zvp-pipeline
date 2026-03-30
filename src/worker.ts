@@ -1,5 +1,6 @@
 import PgBoss from 'pg-boss';
 
+import { loadPipelineEnvFile } from './env.js';
 import { createPipelineRuntimeRepository } from './lib/runtime-repository.js';
 import { processPipelineJob } from './lib/process-job.js';
 import { createAiEnricher } from './stages/ai-enricher.js';
@@ -108,6 +109,7 @@ export async function createPipelineWorker(options: {
   revalidationSecret?: string;
   concurrency?: number;
 }) {
+  loadPipelineEnvFile();
   const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error('DATABASE_URL is required to start the pipeline worker.');
@@ -116,19 +118,37 @@ export async function createPipelineWorker(options: {
   const boss = new PgBoss(databaseUrl) as unknown as BossLike;
   await boss.start();
 
-  const repository = await createPipelineRuntimeRepository({
-    databaseUrl,
-    siteUrl: options.siteUrl,
-    revalidationSecret: options.revalidationSecret,
-  });
-  const aiEnricher = createAiEnricher({ repository });
+  let repository: Awaited<ReturnType<typeof createPipelineRuntimeRepository>> | undefined;
 
-  await registerPipelineWorkers({
-    boss,
-    repository,
-    aiEnricher,
-    concurrency: options.concurrency,
-  });
+  try {
+    repository = await createPipelineRuntimeRepository({
+      databaseUrl,
+      siteUrl: options.siteUrl,
+      revalidationSecret: options.revalidationSecret,
+    });
+    const aiEnricher = createAiEnricher({ repository });
+
+    await registerPipelineWorkers({
+      boss,
+      repository,
+      aiEnricher,
+      concurrency: options.concurrency,
+    });
+  } catch (error) {
+    try {
+      await boss.stop({ graceful: true, close: true });
+    } catch {
+      // Preserve the bootstrap failure as the primary error.
+    }
+
+    try {
+      await repository?.close();
+    } catch {
+      // Preserve the bootstrap failure as the primary error.
+    }
+
+    throw error;
+  }
 
   return {
     boss,
@@ -140,8 +160,29 @@ export async function createPipelineWorker(options: {
         singletonKey: payload.sourceUrl,
       });
     },
-    stop() {
-      return boss.stop({ graceful: true, close: true });
+    async stop() {
+      let stopError: unknown;
+      let closeError: unknown;
+
+      try {
+        await boss.stop({ graceful: true, close: true });
+      } catch (error) {
+        stopError = error;
+      }
+
+      try {
+        await repository.close();
+      } catch (error) {
+        closeError = error;
+      }
+
+      if (stopError) {
+        throw stopError;
+      }
+
+      if (closeError) {
+        throw closeError;
+      }
     },
   };
 }

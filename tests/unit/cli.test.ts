@@ -5,6 +5,7 @@ import { runCli } from '../../src/cli.js';
 function createDependencies() {
   const stdout = vi.fn();
   const stderr = vi.fn();
+  const dispose = vi.fn(async () => undefined);
   const runCommand = vi.fn(async () => ({ summary: { processed: 1 } }));
   const statsCommand = vi.fn(async () => ({
     totalJobs: 12,
@@ -22,9 +23,11 @@ function createDependencies() {
       runCommand,
       statsCommand,
       seedCommand,
+      dispose,
       stdout,
       stderr,
     },
+    dispose,
     runCommand,
     statsCommand,
     seedCommand,
@@ -35,7 +38,7 @@ function createDependencies() {
 
 describe('runCli', () => {
   it('dispatches the run command with parsed options', async () => {
-    const { deps, runCommand } = createDependencies();
+    const { deps, runCommand, dispose } = createDependencies();
 
     const exitCode = await runCli(['run', '--file=./test.mid', '--dry-run', '--concurrency=3'], deps);
 
@@ -48,15 +51,17 @@ describe('runCli', () => {
       status: undefined,
       concurrency: 3,
     });
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   it('rejects conflicting file and source flags', async () => {
-    const { deps, stderr } = createDependencies();
+    const { deps, stderr, dispose } = createDependencies();
 
     const exitCode = await runCli(['run', '--file=./test.mid', '--source=freemidi'], deps);
 
     expect(exitCode).toBe(1);
     expect(stderr).toHaveBeenCalledWith('--file cannot be combined with --source.');
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   it('prints formatted stats output', async () => {
@@ -78,5 +83,17 @@ describe('runCli', () => {
     expect(exitCode).toBe(0);
     expect(seedCommand).toHaveBeenCalledTimes(1);
     expect(stdout).toHaveBeenCalledWith('Seeded 4 difficulties and 3 genres.');
+  });
+
+  it('reports cleanup failures without masking command completion', async () => {
+    const { deps, stderr } = createDependencies();
+    deps.dispose = vi.fn(async () => {
+      throw new Error('cleanup failed');
+    });
+
+    const exitCode = await runCli(['stats'], deps);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toHaveBeenCalledWith('cleanup failed');
   });
 });

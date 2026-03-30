@@ -37,6 +37,28 @@ function validateInput(input: QualityScorerInput): void {
     throw new RangeError(`QualityScorerInput.inRangeNotes must be >= 0; received ${input.inRangeNotes}`);
   }
 
+  if (input.inRangeNotes > input.totalNotes) {
+    throw new RangeError(
+      `QualityScorerInput.inRangeNotes (${input.inRangeNotes}) must be <= totalNotes (${input.totalNotes})`,
+    );
+  }
+
+  if (input.averageChordSize < 0) {
+    throw new RangeError(`QualityScorerInput.averageChordSize must be >= 0; received ${input.averageChordSize}`);
+  }
+
+  if (input.peakChordSize < 0) {
+    throw new RangeError(`QualityScorerInput.peakChordSize must be >= 0; received ${input.peakChordSize}`);
+  }
+
+  if (input.notesPerSecond < 0) {
+    throw new RangeError(`QualityScorerInput.notesPerSecond must be >= 0; received ${input.notesPerSecond}`);
+  }
+
+  if (input.timingJitter < 0) {
+    throw new RangeError(`QualityScorerInput.timingJitter must be >= 0; received ${input.timingJitter}`);
+  }
+
   if (input.totalNotes > 0) {
     if (input.averageChordSize < 1) {
       throw new RangeError(`QualityScorerInput.averageChordSize must be >= 1; received ${input.averageChordSize}`);
@@ -45,12 +67,6 @@ function validateInput(input: QualityScorerInput): void {
     if (input.peakChordSize < input.averageChordSize) {
       throw new RangeError(
         `QualityScorerInput.peakChordSize (${input.peakChordSize}) must be >= averageChordSize (${input.averageChordSize})`,
-      );
-    }
-
-    if (input.inRangeNotes > input.totalNotes) {
-      throw new RangeError(
-        `QualityScorerInput.inRangeNotes (${input.inRangeNotes}) must be <= totalNotes (${input.totalNotes})`,
       );
     }
   }

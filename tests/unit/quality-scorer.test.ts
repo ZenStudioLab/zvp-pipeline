@@ -163,6 +163,32 @@ describe('scoreConversionQuality', () => {
         }),
       ).toThrow(RangeError);
     });
+
+    it('throws RangeError when notesPerSecond is negative', () => {
+      expect(() =>
+        scoreConversionQuality({
+          totalNotes: 100,
+          inRangeNotes: 80,
+          averageChordSize: 1.5,
+          peakChordSize: 3,
+          notesPerSecond: -1,
+          timingJitter: 0.05,
+        }),
+      ).toThrow(RangeError);
+    });
+
+    it('throws RangeError when timingJitter is negative', () => {
+      expect(() =>
+        scoreConversionQuality({
+          totalNotes: 100,
+          inRangeNotes: 100,
+          averageChordSize: 1,
+          peakChordSize: 1,
+          notesPerSecond: 4,
+          timingJitter: -0.5,
+        }),
+      ).toThrow(RangeError);
+    });
   });
 
   it('contribution fields sum to the final score', () => {

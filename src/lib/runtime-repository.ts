@@ -94,14 +94,30 @@ function mapGenreRecord(record: typeof genre.$inferSelect): GenreRecord {
 
 export async function createPipelineRuntimeRepository(options: RuntimeRepositoryOptions = {}) {
   const db = options.db ?? createDbClient(options.databaseUrl);
+  const ownsDbClient = !options.db;
   const fetchImpl = options.fetchImpl ?? fetch;
   const siteUrl = (options.siteUrl ?? process.env.SITE_URL ?? '').replace(/\/$/, '');
   const revalidationSecret = options.revalidationSecret ?? process.env.REVALIDATION_SECRET ?? '';
 
-  const [genreRows, difficultyRows] = await Promise.all([
-    db.select().from(genre).orderBy(asc(genre.displayOrder), asc(genre.name)),
-    db.select().from(difficulty).orderBy(asc(difficulty.level)),
-  ]);
+  let genreRows: typeof genre.$inferSelect[];
+  let difficultyRows: typeof difficulty.$inferSelect[];
+
+  try {
+    [genreRows, difficultyRows] = await Promise.all([
+      db.select().from(genre).orderBy(asc(genre.displayOrder), asc(genre.name)),
+      db.select().from(difficulty).orderBy(asc(difficulty.level)),
+    ]);
+  } catch (error) {
+    if (ownsDbClient) {
+      try {
+        await db.$client.end({ timeout: 5 });
+      } catch {
+        // Preserve the bootstrap failure as the primary error.
+      }
+    }
+
+    throw error;
+  }
 
   async function getExistingArtistNames(): Promise<string[]> {
     const rows = await db.select({ name: artist.name }).from(artist).orderBy(asc(artist.name));
@@ -476,6 +492,14 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
     return rows.map((row) => row.sourceUrl);
   }
 
+  async function close(): Promise<void> {
+    if (!ownsDbClient) {
+      return;
+    }
+
+    await db.$client.end({ timeout: 5 });
+  }
+
   return {
     db,
     genres: genreRows.map(mapGenreRecord),
@@ -495,5 +519,6 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
     getStats,
     seedReferenceData,
     getCatalogSourceUrlsByStatus,
+    close,
   };
 }
