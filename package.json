@@ -4,14 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "yarn --cwd ../packages/db build && tsc -p tsconfig.build.json",
-    "type-check": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "build": "yarn --cwd ../midi-to-vp build && yarn --cwd ../packages/db build && tsc -p tsconfig.build.json",
+    "type-check": "yarn --cwd ../midi-to-vp build:types && tsc -p tsconfig.json --noEmit",
+    "test": "yarn --cwd ../midi-to-vp build && vitest run",
+    "test:watch": "yarn --cwd ../midi-to-vp build && vitest",
+    "test:coverage": "yarn --cwd ../midi-to-vp build && vitest run --coverage"
   },
   "dependencies": {
-    "@tonejs/midi": "^2.0.28",
     "@zen/db": "*",
     "@zen/midi-to-vp": "*",
     "commander": "^13.1.0",
@@ -21,6 +20,7 @@
     "postgres": "^3.4.7"
   },
   "devDependencies": {
+    "@tonejs/midi": "^2.0.28",
     "@types/node": "^24.4.0",
     "@vitest/coverage-v8": "^3.0.5",
     "@zen/tsconfig": "*",

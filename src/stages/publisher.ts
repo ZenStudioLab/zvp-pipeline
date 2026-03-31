@@ -68,6 +68,10 @@ function buildRevalidationPaths(input: PublisherInput): string[] {
   ];
 }
 
+function normalizePersistedInteger(value: number): number {
+  return Math.round(value);
+}
+
 export async function publishSheet(input: PublisherInput, repository: PublisherRepository): Promise<PublisherResult> {
   const outcome = determinePublicationOutcome(input.qualityScore, input.confidenceScore);
 
@@ -93,8 +97,8 @@ export async function publishSheet(input: PublisherInput, repository: PublisherR
     artistId: input.artist.id,
     genreId: input.genre.id,
     difficultyId: input.difficulty.id,
-    bpm: input.bpm,
-    durationSeconds: input.durationSeconds,
+    bpm: normalizePersistedInteger(input.bpm),
+    durationSeconds: normalizePersistedInteger(input.durationSeconds),
     noteCount: input.noteCount,
     notesPerSecond: input.notesPerSecond,
     sheetData: input.sheetData,

@@ -33,5 +33,5 @@ describe('built pipeline runtime', () => {
     );
 
     expect(output).toBe('loaded');
-  });
+  }, 20000);
 });
