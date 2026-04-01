@@ -57,7 +57,7 @@ describe('evaluatePipelineStages', () => {
 
   it('returns invalid_quality_signals rejection when the scorer raises a RangeError', async () => {
     vi.mocked(scoreConversionQuality).mockImplementationOnce(() => {
-      throw new RangeError('QualityScorerInput.inRangeNotes must be finite; received NaN');
+      throw new RangeError('QualitySignals.inRangeNotes must be finite; received NaN');
     });
 
     const result = await evaluatePipelineStages(

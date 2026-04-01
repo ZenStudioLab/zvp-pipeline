@@ -29,7 +29,7 @@ export function convertMidiSource(input: { file: Uint8Array | Buffer }): Convert
   const durationSeconds = noteCount === 0
     ? 0
     : Number(Math.max(...converted.transformedNotes.map((note) => note.endSec)).toFixed(3));
-  const notesPerSecond = converted.metadata.qualitySignals.notesPerSecond;
+  const notesPerSecond = converted.metadata.qualitySignals.avgNotesPerSecond;
 
   return {
     ok: true,
@@ -40,12 +40,17 @@ export function convertMidiSource(input: { file: Uint8Array | Buffer }): Convert
     notesPerSecond,
     warnings: converted.warnings,
     qualitySignals: {
-      totalNotes: converted.metadata.qualitySignals.totalRawNotes,
+      totalRawNotes: converted.metadata.qualitySignals.totalRawNotes,
       inRangeNotes: converted.metadata.qualitySignals.inRangeNotes,
       averageChordSize: converted.metadata.qualitySignals.averageChordSize,
       peakChordSize: converted.metadata.qualitySignals.peakChordSize,
-      notesPerSecond,
+      avgNotesPerSecond: notesPerSecond,
       timingJitter: converted.metadata.qualitySignals.timingJitter,
+      p95ChordSize: converted.metadata.qualitySignals.p95ChordSize,
+      hardChordRate: converted.metadata.qualitySignals.hardChordRate,
+      p95NotesPerSecond: converted.metadata.qualitySignals.p95NotesPerSecond,
+      maxNotesPerSecond: converted.metadata.qualitySignals.maxNotesPerSecond,
+      gridConfidence: converted.metadata.qualitySignals.gridConfidence,
     },
   };
 }

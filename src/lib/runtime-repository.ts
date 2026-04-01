@@ -1,8 +1,21 @@
 import { artist, createDbClient, difficulty, genre, pipelineJob, sheet, songFingerprint, type ZenDatabase } from '@zen/db';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
-import type { PipelineStatus } from './logger.js';
 import type { ArtistRecord, DifficultyRecord, GenreRecord } from '../stages/types.js';
+
+type PersistedPipelineStatus = 'pending' | 'converting' | 'scoring' | 'dedup' | 'published' | 'rejected' | 'failed';
+type CatalogStatusFilter = PersistedPipelineStatus | 'needs_review';
+
+const VALID_CATALOG_STATUS_FILTERS = [
+  'pending',
+  'converting',
+  'scoring',
+  'dedup',
+  'published',
+  'needs_review',
+  'rejected',
+  'failed',
+] as const;
 
 type RuntimeRepositoryOptions = {
   db?: ZenDatabase;
@@ -14,7 +27,7 @@ type RuntimeRepositoryOptions = {
 
 type SaveJobStatusEvent = {
   sourceUrl: string;
-  status: PipelineStatus;
+  status: PersistedPipelineStatus;
   sheetId?: string | null;
   normalizedTitle?: string;
   normalizedArtist?: string;
@@ -63,8 +76,24 @@ function normalizeLookupKey(value: string): string {
     .trim();
 }
 
-function terminalStatus(status: PipelineStatus): boolean {
+function terminalStatus(status: PersistedPipelineStatus): boolean {
   return status === 'published' || status === 'rejected' || status === 'failed';
+}
+
+function isCatalogStatusFilter(value: string): value is CatalogStatusFilter {
+  return (VALID_CATALOG_STATUS_FILTERS as readonly string[]).includes(value);
+}
+
+function buildCatalogStatusCondition(status: CatalogStatusFilter) {
+  if (status === 'needs_review') {
+    return and(eq(pipelineJob.status, 'published'), eq(sheet.needsReview, true));
+  }
+
+  if (status === 'published') {
+    return and(eq(pipelineJob.status, 'published'), eq(sheet.needsReview, false));
+  }
+
+  return eq(pipelineJob.status, status);
 }
 
 function mapArtistRecord(record: typeof artist.$inferSelect): ArtistRecord {
@@ -378,7 +407,7 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
   }): Promise<Array<{ sourceUrl: string; sourceSite: string | null; rawTitle: string | null; normalizedArtist: string | null }>> {
     const conditions = [
       filters.source ? eq(pipelineJob.sourceSite, filters.source) : undefined,
-      filters.status ? eq(pipelineJob.status, filters.status as PipelineStatus) : undefined,
+      filters.status && isCatalogStatusFilter(filters.status) ? buildCatalogStatusCondition(filters.status) : undefined,
     ].filter(Boolean);
 
     const rows = await db
@@ -389,6 +418,7 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
         normalizedArtist: pipelineJob.normalizedArtist,
       })
       .from(pipelineJob)
+      .leftJoin(sheet, eq(pipelineJob.outputSheetId, sheet.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(pipelineJob.createdAt))
       .limit(filters.limit);
@@ -483,10 +513,15 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
   }
 
   async function getCatalogSourceUrlsByStatus(status: string): Promise<string[]> {
+    if (!isCatalogStatusFilter(status)) {
+      return [];
+    }
+
     const rows = await db
       .select({ sourceUrl: pipelineJob.sourceUrl })
       .from(pipelineJob)
-      .where(eq(pipelineJob.status, status as PipelineStatus))
+      .leftJoin(sheet, eq(pipelineJob.outputSheetId, sheet.id))
+      .where(buildCatalogStatusCondition(status))
       .orderBy(desc(pipelineJob.createdAt));
 
     return rows.map((row) => row.sourceUrl);

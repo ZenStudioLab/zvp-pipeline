@@ -25,9 +25,16 @@ describe('convertMidiSource contract', () => {
     }
 
     expect(result.noteCount).toBe(2);
-    expect(result.qualitySignals.totalNotes).toBe(2);
+    expect(result.qualitySignals.totalRawNotes).toBe(2);
     expect(result.qualitySignals.inRangeNotes).toBe(2);
-    expect(result.qualitySignals.notesPerSecond).toBeGreaterThan(0);
+    expect(result.qualitySignals.avgNotesPerSecond).toBeGreaterThan(0);
+    expect(result.notesPerSecond).toBe(result.qualitySignals.avgNotesPerSecond);
+    expect(result.qualitySignals.averageChordSize).toBeLessThanOrEqual(result.qualitySignals.p95ChordSize);
+    expect(result.qualitySignals.p95ChordSize).toBeLessThanOrEqual(result.qualitySignals.peakChordSize);
+    expect(result.qualitySignals.p95NotesPerSecond).toBeLessThanOrEqual(result.qualitySignals.maxNotesPerSecond);
+    expect(result.qualitySignals.p95NotesPerSecond).toBeGreaterThan(0);
+    expect(result.qualitySignals.gridConfidence).toBeGreaterThanOrEqual(0);
+    expect(result.qualitySignals.gridConfidence).toBeLessThanOrEqual(1);
     expect(result.sheetData.length).toBeGreaterThan(0);
   });
 

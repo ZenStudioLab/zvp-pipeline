@@ -52,8 +52,13 @@ describe('convertMidiSource', () => {
           inRangeNotes: 4,
           averageChordSize: 1.5,
           peakChordSize: 3,
-          notesPerSecond: 6.4,
+          avgNotesPerSecond: 6.4,
           timingJitter: 0.125,
+          p95ChordSize: 2,
+          hardChordRate: 0.1,
+          p95NotesPerSecond: 7,
+          maxNotesPerSecond: 9,
+          gridConfidence: 0.85,
         },
       },
     });
@@ -77,13 +82,19 @@ describe('convertMidiSource', () => {
     expect(result.noteCount).toBe(4);
     expect(result.notesPerSecond).toBe(6.4);
     expect(result.qualitySignals).toEqual({
-      totalNotes: 5,
+      totalRawNotes: 5,
       inRangeNotes: 4,
       averageChordSize: 1.5,
       peakChordSize: 3,
-      notesPerSecond: 6.4,
+      avgNotesPerSecond: 6.4,
       timingJitter: 0.125,
+      p95ChordSize: 2,
+      hardChordRate: 0.1,
+      p95NotesPerSecond: 7,
+      maxNotesPerSecond: 9,
+      gridConfidence: 0.85,
     });
+    expect(result.qualitySignals).not.toHaveProperty('notesPerSecond');
   });
 
   it('maps internal_error to corrupted_midi and preserves diagnostics', () => {

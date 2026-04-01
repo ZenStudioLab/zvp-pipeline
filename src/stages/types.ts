@@ -1,3 +1,5 @@
+import type { QualitySignals as MidiQualitySignals, ScoringAssessment } from '@zen/midi-to-vp';
+
 export type ConfidenceBand = 'high' | 'medium' | 'low';
 
 export type MetadataNormalizationInput = {
@@ -18,39 +20,8 @@ export type NormalizedMetadata = {
 
 export type QualityScoreBand = 'publish' | 'review' | 'reject';
 
-export type QualitySignalSet = {
-  inRangeRatio: number;
-  chordDensity: number;
-  noteDensity: number;
-  timingConsistency: number;
-};
-
-// QualitySignalContributions shares the same four fields as QualitySignalSet but represents
-// different semantics: signals are normalised [0,1] quality indicators, while contributions
-// are the weighted sub-scores that sum to the final quality score. Kept as separate types
-// to prevent future signal/weight divergence from quietly changing output semantics.
-export type QualitySignalContributions = {
-  inRangeRatio: number;
-  chordDensity: number;
-  noteDensity: number;
-  timingConsistency: number;
-};
-
-export type QualityScorerInput = {
-  totalNotes: number;
-  inRangeNotes: number;
-  averageChordSize: number;
-  peakChordSize: number;
-  notesPerSecond: number;
-  timingJitter: number;
-};
-
-export type QualityAssessment = {
-  score: number;
-  rubricVersion: string;
+export type QualityAssessment = ScoringAssessment & {
   scoreBand: QualityScoreBand;
-  signals: QualitySignalSet;
-  contributions: QualitySignalContributions;
 };
 
 export type FingerprintRecord = {
@@ -117,14 +88,7 @@ export type MetadataEnrichmentResult = {
   artist: ArtistRecord;
 };
 
-export type ConverterQualitySignals = {
-  totalNotes: number;
-  inRangeNotes: number;
-  averageChordSize: number;
-  peakChordSize: number;
-  notesPerSecond: number;
-  timingJitter: number;
-};
+export type ConverterQualitySignals = MidiQualitySignals;
 
 export type ConverterSuccess = {
   ok: true;

@@ -38,6 +38,7 @@ type CatalogEntry = {
 };
 
 const COMMENT_MAX_LENGTH = 500;
+const VALID_STATUS_FILTERS = ['pending', 'converting', 'scoring', 'dedup', 'published', 'needs_review', 'rejected', 'failed'] as const;
 
 function normalizeCatalogComments(raw: unknown): string[] {
 	if (!Array.isArray(raw)) {
@@ -201,6 +202,7 @@ async function createDefaultDependencies(): Promise<CliDependencies> {
 						status: 'rejected',
 						source_url: entry.source_url,
 						rejection_reason: evaluation.rejectionReason,
+						quality_reasons: [],
 					});
 
 					return {
@@ -214,13 +216,18 @@ async function createDefaultDependencies(): Promise<CliDependencies> {
 					evaluation.qualityAssessment.score,
 					evaluation.normalized.confidenceScore,
 				);
+				const logStatus = options.dryRun
+					? 'dry_run'
+					: previewOutcome === 'needs_review'
+						? 'needs_review'
+						: previewOutcome;
 
 				logger.log({
-					status: previewOutcome === 'rejected' ? 'rejected' : 'published',
+					status: logStatus,
 					source_url: entry.source_url,
 					quality_score: evaluation.qualityAssessment.score,
 					rejection_reason: previewOutcome === 'rejected' ? 'low_quality' : undefined,
-					needs_review: previewOutcome === 'needs_review',
+					quality_reasons: evaluation.qualityAssessment.reasons,
 				});
 
 				if (options.dryRun) {
@@ -328,6 +335,14 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 
 			if (options.file && options.source) {
 				throw new Error('--file cannot be combined with --source.');
+			}
+
+			if (options.file && options.status) {
+				throw new Error('--file cannot be combined with --status.');
+			}
+
+			if (options.status && !VALID_STATUS_FILTERS.includes(options.status as (typeof VALID_STATUS_FILTERS)[number])) {
+				throw new Error(`--status must be one of: ${VALID_STATUS_FILTERS.join(', ')}.`);
 			}
 
 			if (options.limit <= 0 || Number.isNaN(options.limit)) {
