@@ -5,15 +5,10 @@ const RUBRIC_WEIGHTS = {
   timingConsistency: 0.2,
 } as const;
 
-const RUBRIC_WEIGHT_TOTAL = Object.values(RUBRIC_WEIGHTS).reduce(
-  (sum, value) => sum + value,
-  0,
-);
+const RUBRIC_WEIGHT_TOTAL = Object.values(RUBRIC_WEIGHTS).reduce((sum, value) => sum + value, 0);
 
 if (Math.abs(RUBRIC_WEIGHT_TOTAL - 1) > 0.000_001) {
-  throw new Error(
-    `Rubric weights must sum to 1.0. Received ${RUBRIC_WEIGHT_TOTAL}.`,
-  );
+  throw new Error(`Rubric weights must sum to 1.0. Received ${RUBRIC_WEIGHT_TOTAL}.`);
 }
 
 export const PIPELINE_THRESHOLDS = {
@@ -23,7 +18,7 @@ export const PIPELINE_THRESHOLDS = {
 } as const;
 
 export const PIPELINE_RUBRIC = {
-  version: "v1",
+  version: 'v1',
   weights: RUBRIC_WEIGHTS,
 } as const;
 
@@ -32,14 +27,3 @@ export const PIPELINE_RERANK = {
   qualityWeight: 0.6,
   ratingWeight: 0.4,
 } as const;
-
-if (
-  PIPELINE_THRESHOLDS.review < 0 ||
-  PIPELINE_THRESHOLDS.review > 1 ||
-  PIPELINE_THRESHOLDS.publish < 0 ||
-  PIPELINE_THRESHOLDS.publish > 1
-) {
-  throw new Error(
-    `PIPELINE_THRESHOLDS values must be between 0 and 1. Got: review=${PIPELINE_THRESHOLDS.review}, publish=${PIPELINE_THRESHOLDS.publish}`,
-  );
-}
