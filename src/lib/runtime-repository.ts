@@ -1,8 +1,35 @@
-import { artist, createDbClient, difficulty, genre, pipelineJob, sheet, songFingerprint, type ZenDatabase } from '@zen/db';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import {
+  artist,
+  createDbClient,
+  difficulty,
+  genre,
+  pipelineJob,
+  sheet,
+  songFingerprint,
+  type ZenDatabase,
+} from "@zen/db";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
-import type { PipelineStatus } from './logger.js';
-import type { ArtistRecord, DifficultyRecord, GenreRecord } from '../stages/types.js';
+import type { PipelineStatus } from "./logger.js";
+
+const VALID_PIPELINE_STATUSES: readonly PipelineStatus[] = [
+  "pending",
+  "converting",
+  "scoring",
+  "dedup",
+  "published",
+  "rejected",
+  "failed",
+] as const;
+
+function isValidPipelineStatus(value: string): value is PipelineStatus {
+  return (VALID_PIPELINE_STATUSES as readonly string[]).includes(value);
+}
+import type {
+  ArtistRecord,
+  DifficultyRecord,
+  GenreRecord,
+} from "../stages/types.js";
 
 type RuntimeRepositoryOptions = {
   db?: ZenDatabase;
@@ -18,7 +45,7 @@ type SaveJobStatusEvent = {
   sheetId?: string | null;
   normalizedTitle?: string;
   normalizedArtist?: string;
-  metadataConfidence?: 'high' | 'medium' | 'low';
+  metadataConfidence?: "high" | "medium" | "low";
   qualityScore?: number;
   rubricVersion?: string;
   rejectionReason?: string;
@@ -55,16 +82,16 @@ type SeedSummary = {
 
 function normalizeLookupKey(value: string): string {
   return value
-    .normalize('NFD')
-    .replace(/\p{M}+/gu, '')
+    .normalize("NFD")
+    .replace(/\p{M}+/gu, "")
     .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
 function terminalStatus(status: PipelineStatus): boolean {
-  return status === 'published' || status === 'rejected' || status === 'failed';
+  return status === "published" || status === "rejected" || status === "failed";
 }
 
 function mapArtistRecord(record: typeof artist.$inferSelect): ArtistRecord {
@@ -75,7 +102,9 @@ function mapArtistRecord(record: typeof artist.$inferSelect): ArtistRecord {
   };
 }
 
-function mapDifficultyRecord(record: typeof difficulty.$inferSelect): DifficultyRecord {
+function mapDifficultyRecord(
+  record: typeof difficulty.$inferSelect,
+): DifficultyRecord {
   return {
     id: record.id,
     slug: record.slug,
@@ -92,11 +121,17 @@ function mapGenreRecord(record: typeof genre.$inferSelect): GenreRecord {
   };
 }
 
-export async function createPipelineRuntimeRepository(options: RuntimeRepositoryOptions = {}) {
+export async function createPipelineRuntimeRepository(
+  options: RuntimeRepositoryOptions = {},
+) {
   const db = options.db ?? createDbClient(options.databaseUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
-  const siteUrl = (options.siteUrl ?? process.env.SITE_URL ?? '').replace(/\/$/, '');
-  const revalidationSecret = options.revalidationSecret ?? process.env.REVALIDATION_SECRET ?? '';
+  const siteUrl = (options.siteUrl ?? process.env.SITE_URL ?? "").replace(
+    /\/$/,
+    "",
+  );
+  const revalidationSecret =
+    options.revalidationSecret ?? process.env.REVALIDATION_SECRET ?? "";
 
   const [genreRows, difficultyRows] = await Promise.all([
     db.select().from(genre).orderBy(asc(genre.displayOrder), asc(genre.name)),
@@ -104,17 +139,28 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
   ]);
 
   async function getExistingArtistNames(): Promise<string[]> {
-    const rows = await db.select({ name: artist.name }).from(artist).orderBy(asc(artist.name));
+    const rows = await db
+      .select({ name: artist.name })
+      .from(artist)
+      .orderBy(asc(artist.name));
     return rows.map((row) => row.name);
   }
 
-  async function findArtistByNormalizedName(normalizedName: string): Promise<ArtistRecord | null> {
+  async function findArtistByNormalizedName(
+    normalizedName: string,
+  ): Promise<ArtistRecord | null> {
     const rows = await db.select().from(artist);
-    const match = rows.find((row) => normalizeLookupKey(row.name) === normalizedName);
+    const match = rows.find(
+      (row) => normalizeLookupKey(row.name) === normalizedName,
+    );
     return match ? mapArtistRecord(match) : null;
   }
 
-  async function createArtist(input: { name: string; slug: string; normalizedName: string }): Promise<ArtistRecord> {
+  async function createArtist(input: {
+    name: string;
+    slug: string;
+    normalizedName: string;
+  }): Promise<ArtistRecord> {
     const [inserted] = await db
       .insert(artist)
       .values({
@@ -151,9 +197,14 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
     };
   }
 
-  async function getJobBySourceUrl(sourceUrl: string): Promise<{ status: string; sheetId: string | null } | null> {
+  async function getJobBySourceUrl(
+    sourceUrl: string,
+  ): Promise<{ status: string; sheetId: string | null } | null> {
     const [record] = await db
-      .select({ status: pipelineJob.status, sheetId: pipelineJob.outputSheetId })
+      .select({
+        status: pipelineJob.status,
+        sheetId: pipelineJob.outputSheetId,
+      })
       .from(pipelineJob)
       .where(eq(pipelineJob.sourceUrl, sourceUrl))
       .limit(1);
@@ -187,7 +238,7 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
     if (!existing) {
       await db.insert(pipelineJob).values({
         ...payload,
-        attemptCount: event.status === 'failed' ? 1 : 0,
+        attemptCount: event.status === "failed" ? 1 : 0,
       });
       return;
     }
@@ -196,7 +247,10 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
       .update(pipelineJob)
       .set({
         ...payload,
-        attemptCount: event.status === 'failed' ? existing.attemptCount + 1 : existing.attemptCount,
+        attemptCount:
+          event.status === "failed"
+            ? existing.attemptCount + 1
+            : existing.attemptCount,
       })
       .where(eq(pipelineJob.id, existing.id));
   }
@@ -221,7 +275,7 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
     sourceUrl: string;
     tips?: string[] | null;
     isAutoGenerated: boolean;
-    metadataConfidence: 'high' | 'medium' | 'low';
+    metadataConfidence: "high" | "medium" | "low";
     isPublished: boolean;
     needsReview: boolean;
   }): Promise<{ id: string; slug: string }> {
@@ -288,20 +342,24 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
     }
 
     const response = await fetchImpl(`${siteUrl}/api/revalidate`, {
-      method: 'POST',
+      method: "POST",
       headers: {
         Authorization: `Bearer ${revalidationSecret}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({ paths }),
     });
 
     if (!response.ok) {
-      throw new Error(`ISR revalidation failed with status ${response.status}.`);
+      throw new Error(
+        `ISR revalidation failed with status ${response.status}.`,
+      );
     }
   }
 
-  async function getSheetForAiEnrichment(sheetId: string): Promise<SheetAiRecord | null> {
+  async function getSheetForAiEnrichment(
+    sheetId: string,
+  ): Promise<SheetAiRecord | null> {
     const [record] = await db
       .select({
         sheetId: sheet.id,
@@ -320,7 +378,7 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
       .where(eq(sheet.id, sheetId))
       .limit(1);
 
-    if (!record || typeof record.qualityScore !== 'number') {
+    if (!record || typeof record.qualityScore !== "number") {
       return null;
     }
 
@@ -333,7 +391,9 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
       sheetData: record.sheetData,
       qualityScore: record.qualityScore,
       tips: Array.isArray(record.tips)
-        ? record.tips.filter((value): value is string => typeof value === 'string')
+        ? record.tips.filter(
+            (value): value is string => typeof value === "string",
+          )
         : [],
     };
   }
@@ -359,10 +419,23 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
     source?: string;
     status?: string;
     limit: number;
-  }): Promise<Array<{ sourceUrl: string; sourceSite: string | null; rawTitle: string | null; normalizedArtist: string | null }>> {
+  }): Promise<
+    Array<{
+      sourceUrl: string;
+      sourceSite: string | null;
+      rawTitle: string | null;
+      normalizedArtist: string | null;
+    }>
+  > {
+    if (filters.status && !isValidPipelineStatus(filters.status)) {
+      return [];
+    }
+
     const conditions = [
       filters.source ? eq(pipelineJob.sourceSite, filters.source) : undefined,
-      filters.status ? eq(pipelineJob.status, filters.status as PipelineStatus) : undefined,
+      filters.status
+        ? eq(pipelineJob.status, filters.status as PipelineStatus)
+        : undefined,
     ].filter(Boolean);
 
     const rows = await db
@@ -413,22 +486,68 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
       reviewQueue: Number(reviewSummary?.reviewQueue ?? 0),
       rejected: Number(jobsSummary?.rejected ?? 0),
       failed: Number(jobsSummary?.failed ?? 0),
-      averageQualityScore: Number(Number(jobsSummary?.averageQualityScore ?? 0).toFixed(6)),
-      reasons: Object.fromEntries(rejectionRows.map((row) => [row.reason ?? 'unknown', Number(row.count)])),
+      averageQualityScore: Number(
+        Number(jobsSummary?.averageQualityScore ?? 0).toFixed(6),
+      ),
+      reasons: Object.fromEntries(
+        rejectionRows.map((row) => [
+          row.reason ?? "unknown",
+          Number(row.count),
+        ]),
+      ),
     };
   }
 
   async function seedReferenceData(): Promise<SeedSummary> {
     const difficultySeed = [
-      { slug: 'beginner', label: 'Beginner', level: 1, colorHex: '#34D399', description: 'Foundational songs and simple patterns.' },
-      { slug: 'intermediate', label: 'Intermediate', level: 2, colorHex: '#F59E0B', description: 'Balanced challenge with moderate jumps and chords.' },
-      { slug: 'advanced', label: 'Advanced', level: 3, colorHex: '#F97316', description: 'Fast passages, wider jumps, and denser timing.' },
-      { slug: 'expert', label: 'Expert', level: 4, colorHex: '#EF4444', description: 'High-density arrangements for practiced players.' },
+      {
+        slug: "beginner",
+        label: "Beginner",
+        level: 1,
+        colorHex: "#34D399",
+        description: "Foundational songs and simple patterns.",
+      },
+      {
+        slug: "intermediate",
+        label: "Intermediate",
+        level: 2,
+        colorHex: "#F59E0B",
+        description: "Balanced challenge with moderate jumps and chords.",
+      },
+      {
+        slug: "advanced",
+        label: "Advanced",
+        level: 3,
+        colorHex: "#F97316",
+        description: "Fast passages, wider jumps, and denser timing.",
+      },
+      {
+        slug: "expert",
+        label: "Expert",
+        level: 4,
+        colorHex: "#EF4444",
+        description: "High-density arrangements for practiced players.",
+      },
     ] as const;
     const genreSeed = [
-      { slug: 'soundtrack', name: 'Soundtrack', description: 'Film, game, and orchestral themes.', displayOrder: 1 },
-      { slug: 'anime', name: 'Anime', description: 'Anime openings, endings, and themes.', displayOrder: 2 },
-      { slug: 'classical', name: 'Classical', description: 'Piano, orchestral, and chamber repertoire.', displayOrder: 3 },
+      {
+        slug: "soundtrack",
+        name: "Soundtrack",
+        description: "Film, game, and orchestral themes.",
+        displayOrder: 1,
+      },
+      {
+        slug: "anime",
+        name: "Anime",
+        description: "Anime openings, endings, and themes.",
+        displayOrder: 2,
+      },
+      {
+        slug: "classical",
+        name: "Classical",
+        description: "Piano, orchestral, and chamber repertoire.",
+        displayOrder: 3,
+      },
     ] as const;
 
     for (const item of difficultySeed) {
@@ -466,7 +585,13 @@ export async function createPipelineRuntimeRepository(options: RuntimeRepository
     };
   }
 
-  async function getCatalogSourceUrlsByStatus(status: string): Promise<string[]> {
+  async function getCatalogSourceUrlsByStatus(
+    status: string,
+  ): Promise<string[]> {
+    if (!isValidPipelineStatus(status)) {
+      return [];
+    }
+
     const rows = await db
       .select({ sourceUrl: pipelineJob.sourceUrl })
       .from(pipelineJob)
