@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PipelineLogger } from '../../src/lib/logger';
+import { PipelineLogger } from '../../src/lib/logger.js';
 
 describe('PipelineLogger', () => {
   it('stores structured entries with status, quality_score, and rejection_reason fields', () => {
@@ -51,12 +51,66 @@ describe('PipelineLogger', () => {
       scoring: 0,
       dedup: 0,
       published: 1,
+      needs_review: 0,
+      dry_run: 0,
       rejected: 1,
       failed: 1,
       averageQualityScore: 0.6,
       autoPublishRate: 0.333333,
       reasons: {
         'low-quality': 1,
+      },
+      qualityReasons: {},
+    });
+  });
+
+  it('aggregates quality reasons separately from coarse rejection reasons', () => {
+    const logger = new PipelineLogger();
+
+    logger.log({
+      status: 'rejected',
+      source_url: 'https://example.com/a.mid',
+      quality_score: 0,
+      rejection_reason: 'low_quality',
+      quality_reasons: ['FATAL_MAX_NOTE_DENSITY', 'LOW_TIMING_CONSISTENCY'],
+    });
+
+    logger.log({
+      status: 'needs_review',
+      source_url: 'https://example.com/b.mid',
+      quality_score: 0.62,
+      quality_reasons: ['HIGH_LOCAL_NOTE_DENSITY'],
+    });
+
+    expect(logger.summarize()).toMatchObject({
+      rejected: 1,
+      needs_review: 1,
+      reasons: {
+        low_quality: 1,
+      },
+      qualityReasons: {
+        FATAL_MAX_NOTE_DENSITY: 1,
+        LOW_TIMING_CONSISTENCY: 1,
+        HIGH_LOCAL_NOTE_DENSITY: 1,
+      },
+    });
+  });
+
+  it('tracks needs-review and dry-run outcomes separately from published results', () => {
+    const logger = new PipelineLogger();
+
+    logger.log({ status: 'needs_review', quality_score: 0.62, quality_reasons: ['HIGH_LOCAL_NOTE_DENSITY'] });
+    logger.log({ status: 'dry_run', quality_score: 0.71, quality_reasons: ['LOW_TIMING_CONSISTENCY'] });
+
+    expect(logger.summarize()).toMatchObject({
+      processed: 2,
+      published: 0,
+      needs_review: 1,
+      dry_run: 1,
+      autoPublishRate: 0,
+      qualityReasons: {
+        HIGH_LOCAL_NOTE_DENSITY: 1,
+        LOW_TIMING_CONSISTENCY: 1,
       },
     });
   });

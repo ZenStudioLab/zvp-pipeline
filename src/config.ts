@@ -1,15 +1,9 @@
-const RUBRIC_WEIGHTS = {
-  inRangeRatio: 0.35,
-  chordDensity: 0.25,
-  noteDensity: 0.2,
-  timingConsistency: 0.2,
-} as const;
+import type { ReasonCode } from "@zen/midi-to-vp";
 
-const RUBRIC_WEIGHT_TOTAL = Object.values(RUBRIC_WEIGHTS).reduce((sum, value) => sum + value, 0);
-
-if (Math.abs(RUBRIC_WEIGHT_TOTAL - 1) > 0.000_001) {
-  throw new Error(`Rubric weights must sum to 1.0. Received ${RUBRIC_WEIGHT_TOTAL}.`);
-}
+// DESIGN NOTE: Config assertions run as module load-time side effects, which guarantees
+// fail-fast behaviour in production before any pipeline work starts. This is intentional;
+// do not move assertions behind a validate() function unless you also replace all imports
+// of this module in tests that might need different config values.
 
 export const PIPELINE_THRESHOLDS = {
   publish: 0.75,
@@ -17,13 +11,33 @@ export const PIPELINE_THRESHOLDS = {
   dedupPromotionDelta: 0.05,
 } as const;
 
-export const PIPELINE_RUBRIC = {
-  version: 'v1',
-  weights: RUBRIC_WEIGHTS,
-} as const;
-
 export const PIPELINE_RERANK = {
   threshold: 2,
   qualityWeight: 0.6,
   ratingWeight: 0.4,
 } as const;
+
+export const WARNING_FLOOR_REASON_CODES: readonly ReasonCode[] = [
+  "LOW_IN_RANGE_RATIO",
+  "HIGH_PEAK_CHORD_SIZE",
+  "HIGH_HARD_CHORD_RATE",
+  "HIGH_LOCAL_NOTE_DENSITY",
+  "LOW_TIMING_CONSISTENCY",
+] as const;
+
+if (PIPELINE_THRESHOLDS.publish < PIPELINE_THRESHOLDS.review) {
+  throw new Error(
+    `Publish threshold (${PIPELINE_THRESHOLDS.publish}) must be >= review threshold (${PIPELINE_THRESHOLDS.review}).`,
+  );
+}
+
+if (
+  PIPELINE_THRESHOLDS.review < 0 ||
+  PIPELINE_THRESHOLDS.review > 1 ||
+  PIPELINE_THRESHOLDS.publish < 0 ||
+  PIPELINE_THRESHOLDS.publish > 1
+) {
+  throw new Error(
+    `Thresholds must be in [0, 1]. Got: review=${PIPELINE_THRESHOLDS.review}, publish=${PIPELINE_THRESHOLDS.publish}`,
+  );
+}

@@ -87,6 +87,30 @@ describe('publishSheet', () => {
     }));
   });
 
+  it('normalizes fractional bpm and duration before inserting a sheet', async () => {
+    const insertedSheets: Array<Record<string, unknown>> = [];
+
+    await publishSheet(
+      createPublisherInput({
+        bpm: 65.000065000065,
+        durationSeconds: 306.545,
+      }),
+      {
+        insertSheet: async (sheet) => {
+          insertedSheets.push(sheet);
+          return { id: 'sheet_metrics', slug: String(sheet.slug) };
+        },
+        updateFingerprint: async () => undefined,
+        revalidatePaths: async () => undefined,
+      }
+    );
+
+    expect(insertedSheets[0]).toEqual(expect.objectContaining({
+      bpm: 65,
+      durationSeconds: 307,
+    }));
+  });
+
   it('rejects low-scoring sheets without writing to the database', async () => {
     let insertCount = 0;
 

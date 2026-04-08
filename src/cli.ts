@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { loadPipelineEnvFile } from './env.js';
 import { createPipelineRuntimeRepository } from './lib/runtime-repository.js';
 import { PipelineLogger } from './lib/logger.js';
 import { processPipelineJob } from './lib/process-job.js';
@@ -23,6 +24,7 @@ type CliDependencies = {
 	runCommand(options: RunCommandOptions): Promise<unknown>;
 	statsCommand(): Promise<PipelineStats>;
 	seedCommand(): Promise<{ difficulties: number; genres: number }>;
+	dispose?(): Promise<void>;
 	stdout(message: string): void;
 	stderr(message: string): void;
 };
@@ -36,6 +38,7 @@ type CatalogEntry = {
 };
 
 const COMMENT_MAX_LENGTH = 500;
+const VALID_STATUS_FILTERS = ['pending', 'converting', 'scoring', 'dedup', 'published', 'needs_review', 'rejected', 'failed'] as const;
 
 function normalizeCatalogComments(raw: unknown): string[] {
 	if (!Array.isArray(raw)) {
@@ -153,6 +156,7 @@ function formatStats(stats: PipelineStats): string {
 }
 
 async function createDefaultDependencies(): Promise<CliDependencies> {
+	loadPipelineEnvFile();
 	const workspaceRoot = resolveWorkspaceRoot();
 	const repository = await createPipelineRuntimeRepository();
 
@@ -198,6 +202,7 @@ async function createDefaultDependencies(): Promise<CliDependencies> {
 						status: 'rejected',
 						source_url: entry.source_url,
 						rejection_reason: evaluation.rejectionReason,
+						quality_reasons: [],
 					});
 
 					return {
@@ -211,13 +216,18 @@ async function createDefaultDependencies(): Promise<CliDependencies> {
 					evaluation.qualityAssessment.score,
 					evaluation.normalized.confidenceScore,
 				);
+				const logStatus = options.dryRun
+					? 'dry_run'
+					: previewOutcome === 'needs_review'
+						? 'needs_review'
+						: previewOutcome;
 
 				logger.log({
-					status: previewOutcome === 'rejected' ? 'rejected' : 'published',
+					status: logStatus,
 					source_url: entry.source_url,
 					quality_score: evaluation.qualityAssessment.score,
 					rejection_reason: previewOutcome === 'rejected' ? 'low_quality' : undefined,
-					needs_review: previewOutcome === 'needs_review',
+					quality_reasons: evaluation.qualityAssessment.reasons,
 				});
 
 				if (options.dryRun) {
@@ -286,6 +296,9 @@ async function createDefaultDependencies(): Promise<CliDependencies> {
 		async seedCommand() {
 			return repository.seedReferenceData();
 		},
+		async dispose() {
+			await repository.close();
+		},
 		stdout(message) {
 			process.stdout.write(`${message}\n`);
 		},
@@ -298,6 +311,7 @@ async function createDefaultDependencies(): Promise<CliDependencies> {
 export async function runCli(argv = process.argv.slice(2), dependencies?: CliDependencies): Promise<number> {
 	const deps = dependencies ?? (await createDefaultDependencies());
 	const program = new Command();
+	let exitCode = 0;
 
 	program.name('pipeline').exitOverride();
 
@@ -321,6 +335,14 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 
 			if (options.file && options.source) {
 				throw new Error('--file cannot be combined with --source.');
+			}
+
+			if (options.file && options.status) {
+				throw new Error('--file cannot be combined with --status.');
+			}
+
+			if (options.status && !VALID_STATUS_FILTERS.includes(options.status as (typeof VALID_STATUS_FILTERS)[number])) {
+				throw new Error(`--status must be one of: ${VALID_STATUS_FILTERS.join(', ')}.`);
 			}
 
 			if (options.limit <= 0 || Number.isNaN(options.limit)) {
@@ -347,12 +369,21 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 
 	try {
 		await program.parseAsync(argv, { from: 'user' });
-		return 0;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Unknown CLI error.';
 		deps.stderr(message);
-		return 1;
+		exitCode = 1;
 	}
+
+	try {
+		await deps.dispose?.();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Unknown CLI cleanup error.';
+		deps.stderr(message);
+		exitCode = 1;
+	}
+
+	return exitCode;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {

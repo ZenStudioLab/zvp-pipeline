@@ -32,6 +32,8 @@ yarn install
 
 ### 2. Configure environment
 
+Copy [`.env.example`](.env.example) to `.env`:
+
 ```bash
 cp .env.example .env
 ```
@@ -41,9 +43,23 @@ Edit `.env`:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | ✅ | Supabase PostgreSQL pooler connection string |
-| `REVALIDATION_SECRET` | ✅ | Shared secret for Next.js ISR revalidation |
-| `SITE_URL` | ✅ | Production URL (e.g. `https://zenpiano.art`) |
-| `OPENAI_API_KEY` | ⚠️ AI worker only | OpenAI key for GPT-4o-mini enrichment |
+| `REVALIDATION_SECRET` | ISR only | Shared bearer token for Next.js ISR revalidation (see below) |
+| `SITE_URL` | ISR only | Base URL of the landing page (see below) |
+| `OPENAI_API_KEY` | optional | OpenAI key for GPT-4o-mini enrichment (see below) |
+
+#### `REVALIDATION_SECRET`
+
+After a sheet is published, the pipeline calls `POST {SITE_URL}/api/revalidate` with an `Authorization: Bearer <secret>` header to tell Next.js to purge and regenerate the static pages for that sheet, its artist, its genre, `/catalog`, and `/`. The landing page reads the same `REVALIDATION_SECRET` env var and rejects requests that don't match. **Both sides must share the same value** — set it in `landing-page/.env.local` (local dev) or in Vercel environment variables (production). See the Route Handler at [landing-page/src/app/api/revalidate/route.ts](../landing-page/src/app/api/revalidate/route.ts) and the full ISR setup in [specs/001-sheet-page-pipeline/quickstart.md](../specs/001-sheet-page-pipeline/quickstart.md).
+
+If either `SITE_URL` or `REVALIDATION_SECRET` is missing, the `revalidatePaths` call is silently skipped — sheets are still published to the database, but the Next.js cache won't be purged until the next full deploy or a manual revalidation.
+
+#### `SITE_URL`
+
+The base URL the pipeline uses when calling the ISR revalidation endpoint above (e.g. `https://zenpiano.art` → calls `https://zenpiano.art/api/revalidate`). For local development point it at the running Next.js dev server: `http://localhost:3000`.
+
+#### `OPENAI_API_KEY`
+
+**Optional.** Only needed when the pg-boss AI enrichment worker is running. If the key is absent or empty, the `OpenAI` client will still be constructed but every enrichment call will return a provider error and the job will be marked `skipped` with `reason: 'provider_error'`. Published sheets are unaffected — they will simply have no SEO title, meta description, or auto-generated tips until the key is provided and the enrichment job is re-queued.
 
 ### 3. Build
 

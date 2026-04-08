@@ -1,8 +1,10 @@
-import { Midi } from '@tonejs/midi';
+import TonejsMidi from '@tonejs/midi';
 import { describe, expect, it } from 'vitest';
 
 import { processPipelineJob } from '../../src/lib/process-job';
 import type { ArtistRecord, DifficultyRecord, FingerprintRecord, GenreRecord } from '../../src/stages/types';
+
+const { Midi } = TonejsMidi;
 
 function createPipelineMidi(): Uint8Array {
   const midi = new Midi();

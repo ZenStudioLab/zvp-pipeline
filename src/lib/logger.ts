@@ -1,10 +1,20 @@
-export type PipelineStatus = 'pending' | 'converting' | 'scoring' | 'dedup' | 'published' | 'rejected' | 'failed';
+export type PipelineStatus =
+  | 'pending'
+  | 'converting'
+  | 'scoring'
+  | 'dedup'
+  | 'published'
+  | 'needs_review'
+  | 'dry_run'
+  | 'rejected'
+  | 'failed';
 
 export type PipelineLogEntry = {
   status: PipelineStatus;
   source_url?: string;
   quality_score?: number;
   rejection_reason?: string;
+  quality_reasons?: string[];
   needs_review?: boolean;
   details?: Record<string, unknown>;
 };
@@ -16,11 +26,14 @@ export type PipelineSummary = {
   scoring: number;
   dedup: number;
   published: number;
+  needs_review: number;
+  dry_run: number;
   rejected: number;
   failed: number;
   averageQualityScore: number;
   autoPublishRate: number;
   reasons: Record<string, number>;
+  qualityReasons: Record<string, number>;
 };
 
 export class PipelineLogger {
@@ -50,11 +63,14 @@ export class PipelineLogger {
       scoring: 0,
       dedup: 0,
       published: 0,
+      needs_review: 0,
+      dry_run: 0,
       rejected: 0,
       failed: 0,
       averageQualityScore: 0,
       autoPublishRate: 0,
       reasons: {},
+      qualityReasons: {},
     };
 
     let qualityScoreTotal = 0;
@@ -64,7 +80,13 @@ export class PipelineLogger {
     for (const entry of this.entries) {
       summary[entry.status] += 1;
 
-      if (entry.status === 'published' || entry.status === 'rejected' || entry.status === 'failed') {
+      if (
+        entry.status === 'published' ||
+        entry.status === 'needs_review' ||
+        entry.status === 'dry_run' ||
+        entry.status === 'rejected' ||
+        entry.status === 'failed'
+      ) {
         summary.processed += 1;
       }
 
@@ -73,12 +95,16 @@ export class PipelineLogger {
         qualityScoreCount += 1;
       }
 
-      if (entry.status === 'published' && !entry.needs_review) {
+      if (entry.status === 'published') {
         autoPublishedCount += 1;
       }
 
       if (entry.status === 'rejected' && entry.rejection_reason) {
         summary.reasons[entry.rejection_reason] = (summary.reasons[entry.rejection_reason] ?? 0) + 1;
+      }
+
+      for (const qualityReason of entry.quality_reasons ?? []) {
+        summary.qualityReasons[qualityReason] = (summary.qualityReasons[qualityReason] ?? 0) + 1;
       }
     }
 
