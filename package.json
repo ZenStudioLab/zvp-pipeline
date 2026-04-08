@@ -14,7 +14,7 @@
     "@zen/db": "*",
     "@zen/midi-to-vp": "*",
     "commander": "^13.1.0",
-    "drizzle-orm": "^0.44.5",
+    "drizzle-orm": "^0.45.2",
     "openai": "^6.7.0",
     "pg-boss": "^9.0.3",
     "postgres": "^3.4.7"
