@@ -43,6 +43,27 @@ midi-scraper/catalog.json
 
 ---
 
+## Codebase Cartography
+
+This workspace uses `codemap.md` files to document architecture.
+
+### Cartography Glob
+
+```
+pipeline/
+├── codemap.md                              — workspace root: pipeline overview
+└── src/
+    ├── codemap.md                          — run-stages, process-job entry
+    ├── lib/codemap.md                     — shared pipeline utilities
+    └── stages/codemap.md                  — pipeline stages (normalizer, converter, etc.)
+```
+
+### Using Codemaps
+
+Run cartography to regenerate: `yarn codemap`
+
+---
+
 ## Environment Setup
 
 Copy `.env.example` to `.env` and fill in the values:
@@ -116,23 +137,23 @@ The `run` command auto-discovers the workspace root by walking up from `cwd` unt
 
 ## Pipeline Stages
 
-| Stage | File | Purpose |
-|-------|------|---------|
-| Normalizer | `stages/normalizer.ts` | Clean title/artist, fuzzy-match existing artists, assign confidence |
-| Converter | `stages/converter.ts` | Parse MIDI → VP notation via `@zen/midi-to-vp` |
-| Quality Scorer | `stages/quality-scorer.ts` | Score conversion on rubric (in-range ratio, chord/note density, timing) |
-| Dedup | `stages/dedup.ts` | Fingerprint-based duplicate detection; decide create / promote / alternate |
-| Metadata Enricher | `stages/metadata-enricher.ts` | Assign genre, difficulty, artist from DB |
-| Publisher | `stages/publisher.ts` | Insert sheet to DB; trigger Next.js ISR revalidation |
-| AI Enricher | `stages/ai-enricher.ts` | Async: generate SEO title, description, practice tips |
+| Stage             | File                          | Purpose                                                                    |
+| ----------------- | ----------------------------- | -------------------------------------------------------------------------- |
+| Normalizer        | `stages/normalizer.ts`        | Clean title/artist, fuzzy-match existing artists, assign confidence        |
+| Converter         | `stages/converter.ts`         | Parse MIDI → VP notation via `@zen/midi-to-vp`                             |
+| Quality Scorer    | `stages/quality-scorer.ts`    | Score conversion on rubric (in-range ratio, chord/note density, timing)    |
+| Dedup             | `stages/dedup.ts`             | Fingerprint-based duplicate detection; decide create / promote / alternate |
+| Metadata Enricher | `stages/metadata-enricher.ts` | Assign genre, difficulty, artist from DB                                   |
+| Publisher         | `stages/publisher.ts`         | Insert sheet to DB; trigger Next.js ISR revalidation                       |
+| AI Enricher       | `stages/ai-enricher.ts`       | Async: generate SEO title, description, practice tips                      |
 
 ### Quality Thresholds (`src/config.ts`)
 
-| Score | Band | Action |
-|-------|------|--------|
-| ≥ 0.75 (with high confidence) | publish | Auto-published |
-| 0.50 – 0.74 | review | Queued for manual review |
-| < 0.50 | reject | Discarded |
+| Score                         | Band    | Action                   |
+| ----------------------------- | ------- | ------------------------ |
+| ≥ 0.75 (with high confidence) | publish | Auto-published           |
+| 0.50 – 0.74                   | review  | Queued for manual review |
+| < 0.50                        | reject  | Discarded                |
 
 ---
 
