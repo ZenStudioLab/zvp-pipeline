@@ -1,32 +1,48 @@
-import { publishSheet } from '../stages/publisher.js';
-import type { PipelineStatus } from './logger.js';
-import type { ArtistRecord, DifficultyRecord, FingerprintRecord, GenreRecord } from '../stages/types.js';
-import { evaluatePipelineStages } from './run-stages.js';
+import { publishSheet } from "../stages/publisher.js";
+import type { PipelineStatus } from "./logger.js";
+import type {
+  ArtistRecord,
+  DifficultyRecord,
+  FingerprintRecord,
+  GenreRecord,
+} from "../stages/types.js";
+import { evaluatePipelineStages } from "./run-stages.js";
 
 type PipelineJobRepository = {
   genres: GenreRecord[];
   difficulties: DifficultyRecord[];
-  getJobBySourceUrl(sourceUrl: string): Promise<{ status: string; sheetId: string | null } | null>;
+  getJobBySourceUrl(
+    sourceUrl: string,
+  ): Promise<{ status: string; sheetId: string | null } | null>;
   saveJobStatus(event: {
     sourceUrl: string;
     status: PipelineStatus;
     sheetId?: string | null;
     normalizedTitle?: string;
     normalizedArtist?: string;
-    metadataConfidence?: 'high' | 'medium' | 'low';
+    metadataConfidence?: "high" | "medium" | "low";
     qualityScore?: number;
     rubricVersion?: string;
+    qualityReasons?: string[];
     rejectionReason?: string;
     sourceSite?: string;
     rawTitle?: string;
   }): Promise<void>;
   getExistingArtistNames(): Promise<string[]>;
-  findArtistByNormalizedName(normalizedName: string): Promise<ArtistRecord | null>;
-  createArtist(input: { name: string; slug: string; normalizedName: string }): Promise<ArtistRecord>;
-  findFingerprintByKey(normalizedKey: string): Promise<FingerprintRecord | null>;
-  insertSheet: Parameters<typeof publishSheet>[1]['insertSheet'];
-  updateFingerprint: Parameters<typeof publishSheet>[1]['updateFingerprint'];
-  revalidatePaths: Parameters<typeof publishSheet>[1]['revalidatePaths'];
+  findArtistByNormalizedName(
+    normalizedName: string,
+  ): Promise<ArtistRecord | null>;
+  createArtist(input: {
+    name: string;
+    slug: string;
+    normalizedName: string;
+  }): Promise<ArtistRecord>;
+  findFingerprintByKey(
+    normalizedKey: string,
+  ): Promise<FingerprintRecord | null>;
+  insertSheet: Parameters<typeof publishSheet>[1]["insertSheet"];
+  updateFingerprint: Parameters<typeof publishSheet>[1]["updateFingerprint"];
+  revalidatePaths: Parameters<typeof publishSheet>[1]["revalidatePaths"];
 };
 
 type ProcessPipelineInput = {
@@ -40,17 +56,20 @@ type ProcessPipelineInput = {
   dryRun: boolean;
 };
 
-export async function processPipelineJob(input: ProcessPipelineInput, repository: PipelineJobRepository): Promise<{
+export async function processPipelineJob(
+  input: ProcessPipelineInput,
+  repository: PipelineJobRepository,
+): Promise<{
   idempotent: boolean;
-  outcome: 'published' | 'needs_review' | 'rejected' | 'dry_run';
+  outcome: "published" | "needs_review" | "rejected" | "dry_run";
   sheetId: string | null;
   transitions: PipelineStatus[];
 }> {
   const existingJob = await repository.getJobBySourceUrl(input.sourceUrl);
-  if (existingJob?.status === 'published' && existingJob.sheetId) {
+  if (existingJob?.status === "published" && existingJob.sheetId) {
     return {
       idempotent: true,
-      outcome: 'published',
+      outcome: "published",
       sheetId: existingJob.sheetId,
       transitions: [],
     };
@@ -59,7 +78,10 @@ export async function processPipelineJob(input: ProcessPipelineInput, repository
   const transitions: PipelineStatus[] = [];
   const pushStatus = async (
     status: PipelineStatus,
-    payload: Omit<Parameters<PipelineJobRepository['saveJobStatus']>[0], 'sourceUrl' | 'status'> = {},
+    payload: Omit<
+      Parameters<PipelineJobRepository["saveJobStatus"]>[0],
+      "sourceUrl" | "status"
+    > = {},
   ) => {
     transitions.push(status);
     await repository.saveJobStatus({
@@ -71,7 +93,7 @@ export async function processPipelineJob(input: ProcessPipelineInput, repository
     });
   };
 
-  await pushStatus('pending');
+  await pushStatus("pending");
 
   const evaluation = await evaluatePipelineStages(
     {
@@ -83,30 +105,31 @@ export async function processPipelineJob(input: ProcessPipelineInput, repository
     repository,
   );
 
-  await pushStatus('converting', {
+  await pushStatus("converting", {
     normalizedTitle: evaluation.normalized.title,
     normalizedArtist: evaluation.normalized.artist,
     metadataConfidence: evaluation.normalized.confidenceBand,
   });
 
   if (!evaluation.ok) {
-    await pushStatus('rejected', {
+    await pushStatus("rejected", {
       rejectionReason: evaluation.rejectionReason,
     });
     return {
       idempotent: false,
-      outcome: 'rejected',
+      outcome: "rejected",
       sheetId: null,
       transitions,
     };
   }
 
-  await pushStatus('scoring', {
+  await pushStatus("scoring", {
     qualityScore: evaluation.qualityAssessment.score,
     rubricVersion: evaluation.qualityAssessment.rubricVersion,
+    qualityReasons: evaluation.qualityAssessment.reasons,
   });
 
-  await pushStatus('dedup');
+  await pushStatus("dedup");
 
   const published = await publishSheet(
     {
@@ -123,7 +146,7 @@ export async function processPipelineJob(input: ProcessPipelineInput, repository
       notesPerSecond: evaluation.conversion.notesPerSecond,
       qualityScore: evaluation.qualityAssessment.score,
       confidenceScore: evaluation.normalized.confidenceScore,
-      source: 'pipeline',
+      source: "pipeline",
       sourceUrl: input.sourceUrl,
       tips: input.tips,
       youtubeUrl: input.youtubeUrl,
@@ -136,12 +159,17 @@ export async function processPipelineJob(input: ProcessPipelineInput, repository
     repository,
   );
 
-  await pushStatus(published.outcome === 'rejected' ? 'rejected' : 'published', {
-    sheetId: published.sheetId,
-    qualityScore: evaluation.qualityAssessment.score,
-    rubricVersion: evaluation.qualityAssessment.rubricVersion,
-    rejectionReason: published.outcome === 'rejected' ? 'low_quality' : undefined,
-  });
+  await pushStatus(
+    published.outcome === "rejected" ? "rejected" : "published",
+    {
+      sheetId: published.sheetId,
+      qualityScore: evaluation.qualityAssessment.score,
+      rubricVersion: evaluation.qualityAssessment.rubricVersion,
+      qualityReasons: evaluation.qualityAssessment.reasons,
+      rejectionReason:
+        published.outcome === "rejected" ? "low_quality" : undefined,
+    },
+  );
 
   return {
     idempotent: false,

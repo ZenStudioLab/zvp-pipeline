@@ -1,24 +1,30 @@
-import { convertMidiSource } from '../stages/converter.js';
-import { planDedupDecision } from '../stages/dedup.js';
-import { enrichSheetMetadata } from '../stages/metadata-enricher.js';
-import { normalizeMetadata } from '../stages/normalizer.js';
-import { scoreConversionQuality } from '../stages/quality-scorer.js';
+import { convertMidiSource } from "../stages/converter.js";
+import { planDedupDecision } from "../stages/dedup.js";
+import { enrichSheetMetadata } from "../stages/metadata-enricher.js";
+import { normalizeMetadata } from "../stages/normalizer.js";
+import { scoreConversionQuality } from "../stages/quality-scorer.js";
 import type {
   ArtistRecord,
   DedupDecision,
   DifficultyRecord,
   GenreRecord,
+  QualityAssessment,
   MetadataEnrichmentResult,
   NormalizedMetadata,
-  QualityAssessment,
-} from '../stages/types.js';
+} from "../stages/types.js";
 
 export type StageEvaluationRepository = {
   genres: GenreRecord[];
   difficulties: DifficultyRecord[];
   getExistingArtistNames(): Promise<string[]>;
-  findArtistByNormalizedName(normalizedName: string): Promise<ArtistRecord | null>;
-  createArtist(input: { name: string; slug: string; normalizedName: string }): Promise<ArtistRecord>;
+  findArtistByNormalizedName(
+    normalizedName: string,
+  ): Promise<ArtistRecord | null>;
+  createArtist(input: {
+    name: string;
+    slug: string;
+    normalizedName: string;
+  }): Promise<ArtistRecord>;
   findFingerprintByKey(normalizedKey: string): Promise<{
     normalizedKey: string;
     canonicalSheetId: string | null;
@@ -41,7 +47,11 @@ type StageEvaluationOptions = {
 export type FailedStageEvaluation = {
   ok: false;
   normalized: NormalizedMetadata;
-    rejectionReason: 'corrupted_midi' | 'empty_midi' | 'percussion_only' | 'invalid_quality_signals';
+  rejectionReason:
+    | "corrupted_midi"
+    | "empty_midi"
+    | "percussion_only"
+    | "invalid_quality_signals";
 };
 
 export type SuccessfulStageEvaluation = {
@@ -87,7 +97,7 @@ export async function evaluatePipelineStages(
       return {
         ok: false,
         normalized,
-        rejectionReason: 'invalid_quality_signals',
+        rejectionReason: "invalid_quality_signals",
       };
     }
     throw err;

@@ -1,6 +1,9 @@
-import type { QualitySignals as MidiQualitySignals, ScoringAssessment } from '@zen/midi-to-vp';
+import type {
+  QualitySignals as MidiQualitySignals,
+  ScoringAssessment,
+} from "@zen/midi-to-vp";
 
-export type ConfidenceBand = 'high' | 'medium' | 'low';
+export type ConfidenceBand = "high" | "medium" | "low";
 
 export type MetadataNormalizationInput = {
   rawTitle: string;
@@ -18,7 +21,7 @@ export type NormalizedMetadata = {
   confidenceBand: ConfidenceBand;
 };
 
-export type QualityScoreBand = 'publish' | 'review' | 'reject';
+export type QualityScoreBand = "publish" | "review" | "reject";
 
 export type QualityAssessment = ScoringAssessment & {
   scoreBand: QualityScoreBand;
@@ -37,7 +40,10 @@ export type DedupInput = {
   qualityScore: number;
 };
 
-export type DedupAction = 'create-fingerprint' | 'promote-canonical' | 'create-alternate';
+export type DedupAction =
+  | "create-fingerprint"
+  | "promote-canonical"
+  | "create-alternate";
 
 export type DedupDecision = {
   action: DedupAction;
@@ -103,7 +109,7 @@ export type ConverterSuccess = {
 
 export type ConverterFailure = {
   ok: false;
-  rejectionReason: 'corrupted_midi' | 'empty_midi' | 'percussion_only';
+  rejectionReason: "corrupted_midi" | "empty_midi" | "percussion_only";
   details?: Record<string, unknown>;
 };
 
@@ -134,7 +140,11 @@ export type PublisherInput = {
   dryRun: boolean;
 };
 
-export type PublisherOutcome = 'published' | 'needs_review' | 'rejected' | 'dry_run';
+export type PublisherOutcome =
+  | "published"
+  | "needs_review"
+  | "rejected"
+  | "dry_run";
 
 export type PublisherResult = {
   outcome: PublisherOutcome;

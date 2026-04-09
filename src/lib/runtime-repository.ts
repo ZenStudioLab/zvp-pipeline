@@ -54,6 +54,7 @@ type SaveJobStatusEvent = {
   metadataConfidence?: "high" | "medium" | "low";
   qualityScore?: number;
   rubricVersion?: string;
+  qualityReasons?: string[];
   rejectionReason?: string;
   lastError?: string;
   sourceSite?: string;
@@ -273,6 +274,7 @@ export async function createPipelineRuntimeRepository(
       status: event.status,
       qualityScore: event.qualityScore,
       rubricVersion: event.rubricVersion,
+      qualityReasons: event.qualityReasons ?? null,
       rejectionReason: event.rejectionReason,
       outputSheetId: event.sheetId,
       lastError: event.lastError,

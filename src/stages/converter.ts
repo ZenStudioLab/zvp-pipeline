@@ -1,16 +1,22 @@
-import { tryConvertMidiToVp } from '@zen/midi-to-vp';
+import { tryConvertMidiToVp } from "@zen/midi-to-vp";
 
-import type { ConverterResult } from './types.js';
+import type { ConverterResult } from "./types.js";
 
-export function convertMidiSource(input: { file: Uint8Array | Buffer }): ConverterResult {
-  const bytes = input.file instanceof Uint8Array ? input.file : new Uint8Array(input.file);
+export function convertMidiSource(input: {
+  file: Uint8Array | Buffer;
+}): ConverterResult {
+  const bytes =
+    input.file instanceof Uint8Array ? input.file : new Uint8Array(input.file);
   const converted = tryConvertMidiToVp(bytes, {
-    notationMode: 'extended',
+    notationMode: "extended",
     includePercussion: false,
   });
 
   if (!converted.ok) {
-    const mappedReason = converted.reason === 'internal_error' ? 'corrupted_midi' : converted.reason;
+    const mappedReason =
+      converted.reason === "internal_error"
+        ? "corrupted_midi"
+        : converted.reason;
     const details = converted.details ? { ...converted.details } : undefined;
 
     return details
@@ -26,9 +32,14 @@ export function convertMidiSource(input: { file: Uint8Array | Buffer }): Convert
   }
 
   const noteCount = converted.transformedNotes.length;
-  const durationSeconds = noteCount === 0
-    ? 0
-    : Number(Math.max(...converted.transformedNotes.map((note) => note.endSec)).toFixed(3));
+  const durationSeconds =
+    noteCount === 0
+      ? 0
+      : Number(
+          Math.max(
+            ...converted.transformedNotes.map((note) => note.endSec),
+          ).toFixed(3),
+        );
   const notesPerSecond = converted.metadata.qualitySignals.avgNotesPerSecond;
 
   return {
@@ -42,6 +53,8 @@ export function convertMidiSource(input: { file: Uint8Array | Buffer }): Convert
     qualitySignals: {
       totalRawNotes: converted.metadata.qualitySignals.totalRawNotes,
       inRangeNotes: converted.metadata.qualitySignals.inRangeNotes,
+      outputTotalNotes: converted.metadata.qualitySignals.outputTotalNotes,
+      outputInRangeNotes: converted.metadata.qualitySignals.outputInRangeNotes,
       averageChordSize: converted.metadata.qualitySignals.averageChordSize,
       peakChordSize: converted.metadata.qualitySignals.peakChordSize,
       avgNotesPerSecond: notesPerSecond,
