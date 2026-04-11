@@ -41,6 +41,9 @@ type PipelineJobRepository = {
     normalizedKey: string,
   ): Promise<FingerprintRecord | null>;
   insertSheet: Parameters<typeof publishSheet>[1]["insertSheet"];
+  promoteCanonicalFamily: Parameters<
+    typeof publishSheet
+  >[1]["promoteCanonicalFamily"];
   updateFingerprint: Parameters<typeof publishSheet>[1]["updateFingerprint"];
   revalidatePaths: Parameters<typeof publishSheet>[1]["revalidatePaths"];
 };

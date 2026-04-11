@@ -149,6 +149,10 @@ class InMemoryPipelineRepository {
     });
   }
 
+  async promoteCanonicalFamily(): Promise<void> {
+    // no-op for this in-memory flow test
+  }
+
   async revalidatePaths(paths: string[]): Promise<void> {
     this.revalidated.push(paths);
   }

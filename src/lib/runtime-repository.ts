@@ -382,6 +382,35 @@ export async function createPipelineRuntimeRepository(
       .where(eq(songFingerprint.normalizedKey, update.normalizedKey));
   }
 
+  async function promoteCanonicalFamily(input: {
+    previousCanonicalSheetId: string;
+    nextCanonicalSheetId: string;
+  }): Promise<void> {
+    await db.transaction(async (tx) => {
+      const updatedAt = new Date();
+
+      await tx
+        .update(sheet)
+        .set({
+          isCanonical: false,
+          canonicalSheetId: input.nextCanonicalSheetId,
+          updatedAt,
+        })
+        .where(
+          sql`(${sheet.id} = ${input.previousCanonicalSheetId} or ${sheet.canonicalSheetId} = ${input.previousCanonicalSheetId})`,
+        );
+
+      await tx
+        .update(sheet)
+        .set({
+          isCanonical: true,
+          canonicalSheetId: null,
+          updatedAt,
+        })
+        .where(eq(sheet.id, input.nextCanonicalSheetId));
+    });
+  }
+
   async function revalidatePaths(paths: string[]): Promise<void> {
     if (!siteUrl || !revalidationSecret || paths.length === 0) {
       return;
@@ -459,6 +488,104 @@ export async function createPipelineRuntimeRepository(
         updatedAt: new Date(),
       })
       .where(eq(sheet.id, update.sheetId));
+  }
+
+  async function listFingerprintsForRerank(): Promise<
+    Array<{
+      normalizedKey: string;
+      canonicalSheetId: string | null;
+      versionCount: number;
+    }>
+  > {
+    const rows = await db
+      .select({
+        normalizedKey: songFingerprint.normalizedKey,
+        canonicalSheetId: songFingerprint.canonicalSheetId,
+        versionCount: songFingerprint.versionCount,
+      })
+      .from(songFingerprint)
+      .where(sql`${songFingerprint.versionCount} > 1`)
+      .orderBy(asc(songFingerprint.normalizedKey));
+
+    return rows;
+  }
+
+  async function listVersionsForFingerprint(normalizedKey: string): Promise<
+    Array<{
+      id: string;
+      slug: string;
+      qualityScore: number | null;
+      ratingScore: number | null;
+      ratingCount: number;
+      isCanonical: boolean;
+    }>
+  > {
+    const fingerprint = await findFingerprintByKey(normalizedKey);
+    const canonicalSheetId = fingerprint?.canonicalSheetId;
+
+    if (!canonicalSheetId) {
+      return [];
+    }
+
+    const rows = await db
+      .select({
+        id: sheet.id,
+        slug: sheet.slug,
+        qualityScore: sheet.qualityScore,
+        ratingScore: sheet.ratingScore,
+        ratingCount: sheet.ratingCount,
+        isCanonical: sheet.isCanonical,
+      })
+      .from(sheet)
+      .where(
+        and(
+          eq(sheet.isPublished, true),
+          sql`(${sheet.id} = ${canonicalSheetId} or ${sheet.canonicalSheetId} = ${canonicalSheetId})`,
+        ),
+      )
+      .orderBy(desc(sheet.qualityScore), asc(sheet.createdAt));
+
+    return rows;
+  }
+
+  async function swapCanonicalSheet(input: {
+    normalizedKey: string;
+    nextCanonicalSheetId: string;
+    versionSheetIds: string[];
+  }): Promise<void> {
+    if (input.versionSheetIds.length === 0) {
+      return;
+    }
+
+    await db.transaction(async (tx) => {
+      const updatedAt = new Date();
+
+      await tx
+        .update(sheet)
+        .set({
+          isCanonical: false,
+          canonicalSheetId: input.nextCanonicalSheetId,
+          updatedAt,
+        })
+        .where(inArray(sheet.id, input.versionSheetIds));
+
+      await tx
+        .update(sheet)
+        .set({
+          isCanonical: true,
+          canonicalSheetId: null,
+          updatedAt,
+        })
+        .where(eq(sheet.id, input.nextCanonicalSheetId));
+
+      await tx
+        .update(songFingerprint)
+        .set({
+          canonicalSheetId: input.nextCanonicalSheetId,
+          updatedAt,
+        })
+        .where(eq(songFingerprint.normalizedKey, input.normalizedKey));
+    });
   }
 
   async function listJobs(filters: {
@@ -669,10 +796,14 @@ export async function createPipelineRuntimeRepository(
     getJobBySourceUrl,
     saveJobStatus,
     insertSheet,
+    promoteCanonicalFamily,
     updateFingerprint,
     revalidatePaths,
     getSheetForAiEnrichment,
     updateSheetAiMetadata,
+    listFingerprintsForRerank,
+    listVersionsForFingerprint,
+    swapCanonicalSheet,
     listJobs,
     getStats,
     seedReferenceData,
