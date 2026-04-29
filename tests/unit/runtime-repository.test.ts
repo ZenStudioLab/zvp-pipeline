@@ -1,5 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const seededGenreRows = [
+  {
+    id: "genre_soundtrack",
+    slug: "soundtrack",
+    name: "Soundtrack",
+  },
+];
+
+const seededDifficultyRows = [
+  {
+    id: "difficulty_beginner",
+    slug: "beginner",
+    label: "Beginner",
+    level: 1,
+  },
+];
+
 const dbClientEnd = vi.fn(async () => undefined);
 const orderBy = vi.fn(async () => {
   throw new Error("bootstrap failed");
@@ -56,6 +73,7 @@ describe("createPipelineRuntimeRepository", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    delete process.env.DISABLE_REVALIDATION;
   });
 
   it("closes the owned database client when bootstrap queries fail", async () => {
@@ -81,6 +99,97 @@ describe("createPipelineRuntimeRepository", () => {
     expect(dbClientEnd).toHaveBeenCalledWith({ timeout: 5 });
   });
 
+  it("skips ISR fetches when DISABLE_REVALIDATION is truthy", async () => {
+    vi.resetModules();
+    vi.doUnmock("@zen/db");
+
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      new Response(null, {
+        status: 200,
+      }),
+    );
+
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          orderBy: vi
+            .fn()
+            .mockResolvedValueOnce(seededGenreRows)
+            .mockResolvedValueOnce(seededDifficultyRows),
+        })),
+      })),
+    } as any;
+
+    process.env.DISABLE_REVALIDATION = "true";
+
+    const { createPipelineRuntimeRepository } =
+      await import("../../src/lib/runtime-repository.js");
+    const repository = await createPipelineRuntimeRepository({
+      db,
+      siteUrl: "https://zenpiano.art",
+      revalidationSecret: "secret",
+      fetchImpl,
+    });
+
+    await repository.revalidatePaths(["/", "/catalog"]);
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: "genres",
+      genreRows: [],
+      difficultyRows: [
+        {
+          id: "difficulty_beginner",
+          slug: "beginner",
+          label: "Beginner",
+          level: 1,
+        },
+      ],
+    },
+    {
+      label: "difficulties",
+      genreRows: [
+        {
+          id: "genre_soundtrack",
+          slug: "soundtrack",
+          name: "Soundtrack",
+        },
+      ],
+      difficultyRows: [],
+    },
+  ])(
+    "fails fast when required $label reference data is missing at bootstrap",
+    async ({ genreRows, difficultyRows }) => {
+      vi.resetModules();
+      vi.doUnmock("@zen/db");
+
+      let selectCallCount = 0;
+      const db = {
+        select: vi.fn(() => {
+          selectCallCount += 1;
+
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () =>
+                selectCallCount === 1 ? genreRows : difficultyRows,
+              ),
+            })),
+          };
+        }),
+      } as any;
+
+      const { createPipelineRuntimeRepository } =
+        await import("../../src/lib/runtime-repository.js");
+
+      await expect(createPipelineRuntimeRepository({ db })).rejects.toThrow(
+        "Pipeline reference data is missing. Run 'node dist/cli.js seed' to seed genres and difficulties before running the pipeline.",
+      );
+    },
+  );
+
   it("swaps canonical sheet inside a single transaction", async () => {
     vi.resetModules();
     vi.doUnmock("@zen/db");
@@ -96,7 +205,10 @@ describe("createPipelineRuntimeRepository", () => {
     const db = {
       select: vi.fn(() => ({
         from: vi.fn(() => ({
-          orderBy: vi.fn(async () => []),
+          orderBy: vi
+            .fn()
+            .mockResolvedValueOnce(seededGenreRows)
+            .mockResolvedValueOnce(seededDifficultyRows),
         })),
       })),
       transaction: vi.fn(
@@ -140,7 +252,10 @@ describe("createPipelineRuntimeRepository", () => {
     const db = {
       select: vi.fn(() => ({
         from: vi.fn(() => ({
-          orderBy: vi.fn(async () => []),
+          orderBy: vi
+            .fn()
+            .mockResolvedValueOnce(seededGenreRows)
+            .mockResolvedValueOnce(seededDifficultyRows),
         })),
       })),
       transaction: vi.fn(
@@ -166,5 +281,81 @@ describe("createPipelineRuntimeRepository", () => {
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(tx.update).toHaveBeenCalledTimes(2);
     expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("returns the existing artist when concurrent creates race on the same slug", async () => {
+    vi.resetModules();
+
+    const existingArtist = {
+      id: "artist_1",
+      slug: "hans-zimmer",
+      name: "Hans Zimmer",
+    };
+
+    let selectCallCount = 0;
+    let insertAttemptCount = 0;
+
+    const db = {
+      select: vi.fn(() => {
+        selectCallCount += 1;
+
+        if (selectCallCount <= 2) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () =>
+                selectCallCount === 1 ? seededGenreRows : seededDifficultyRows,
+              ),
+            })),
+          };
+        }
+
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(async () => [existingArtist]),
+            })),
+          })),
+        };
+      }),
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({
+          returning: vi.fn(async () => {
+            insertAttemptCount += 1;
+            if (insertAttemptCount === 1) {
+              return [existingArtist];
+            }
+
+            throw new Error(
+              'duplicate key value violates unique constraint "artist_slug_key"',
+            );
+          }),
+          onConflictDoNothing: vi.fn(() => ({
+            returning: vi.fn(async () => {
+              insertAttemptCount += 1;
+              return insertAttemptCount === 1 ? [existingArtist] : [];
+            }),
+          })),
+        })),
+      })),
+    } as any;
+
+    const { createPipelineRuntimeRepository } =
+      await import("../../src/lib/runtime-repository.js");
+    const repository = await createPipelineRuntimeRepository({ db });
+
+    await expect(
+      Promise.all([
+        repository.createArtist({
+          name: "Hans Zimmer",
+          slug: "hans-zimmer",
+          normalizedName: "hans zimmer",
+        }),
+        repository.createArtist({
+          name: "Hans Zimmer",
+          slug: "hans-zimmer",
+          normalizedName: "hans zimmer",
+        }),
+      ]),
+    ).resolves.toEqual([existingArtist, existingArtist]);
   });
 });

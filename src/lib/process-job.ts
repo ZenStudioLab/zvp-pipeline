@@ -14,6 +14,9 @@ type PipelineJobRepository = {
   getJobBySourceUrl(
     sourceUrl: string,
   ): Promise<{ status: string; sheetId: string | null } | null>;
+  findSheetBySourceUrl?(
+    sourceUrl: string,
+  ): Promise<{ id: string; slug: string } | null>;
   saveJobStatus(event: {
     sourceUrl: string;
     status: PipelineStatus;
@@ -76,6 +79,26 @@ export async function processPipelineJob(
       sheetId: existingJob.sheetId,
       transitions: [],
     };
+  }
+
+  if (existingJob && existingJob.status !== "published") {
+    const existingSheet = await repository.findSheetBySourceUrl?.(input.sourceUrl);
+    if (existingSheet) {
+      await repository.saveJobStatus({
+        sourceUrl: input.sourceUrl,
+        sourceSite: input.sourceSite,
+        rawTitle: input.rawTitle,
+        status: "published",
+        sheetId: existingSheet.id,
+      });
+
+      return {
+        idempotent: true,
+        outcome: "published",
+        sheetId: existingSheet.id,
+        transitions: ["published"],
+      };
+    }
   }
 
   const transitions: PipelineStatus[] = [];

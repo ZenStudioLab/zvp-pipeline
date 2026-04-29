@@ -14,6 +14,7 @@ type RunCommandOptions = {
 	limit: number;
 	file?: string;
 	dryRun: boolean;
+	skipRevalidation: boolean;
 	status?: string;
 	concurrency: number;
 };
@@ -155,10 +156,12 @@ function formatStats(stats: PipelineStats): string {
 	return lines.join('\n');
 }
 
-async function createDefaultDependencies(): Promise<CliDependencies> {
+async function createDefaultDependencies(options: { skipRevalidation?: boolean } = {}): Promise<CliDependencies> {
 	loadPipelineEnvFile();
 	const workspaceRoot = resolveWorkspaceRoot();
-	const repository = await createPipelineRuntimeRepository();
+	const repository = await createPipelineRuntimeRepository({
+		disableRevalidation: options.skipRevalidation,
+	});
 
 	return {
 		async runCommand(options) {
@@ -308,8 +311,37 @@ async function createDefaultDependencies(): Promise<CliDependencies> {
 	};
 }
 
+async function createSeedDependencies(): Promise<CliDependencies> {
+	loadPipelineEnvFile();
+	const repository = await createPipelineRuntimeRepository({ allowMissingReferenceData: true });
+
+	return {
+		async runCommand() {
+			throw new Error('Run command dependencies are not available for seed.');
+		},
+		async statsCommand() {
+			throw new Error('Stats command dependencies are not available for seed.');
+		},
+		async seedCommand() {
+			return repository.seedReferenceData();
+		},
+		async dispose() {
+			await repository.close();
+		},
+		stdout(message) {
+			process.stdout.write(`${message}\n`);
+		},
+		stderr(message) {
+			process.stderr.write(`${message}\n`);
+		},
+	};
+}
+
 export async function runCli(argv = process.argv.slice(2), dependencies?: CliDependencies): Promise<number> {
-	const deps = dependencies ?? (await createDefaultDependencies());
+	const deps = dependencies
+		?? (await (argv[0] === 'seed'
+			? createSeedDependencies()
+			: createDefaultDependencies({ skipRevalidation: argv.includes('--skip-revalidation') })));
 	const program = new Command();
 	let exitCode = 0;
 
@@ -321,6 +353,7 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 		.option('--limit <limit>', 'Max files to process in this run', '100')
 		.option('--file <file>')
 		.option('--dry-run', 'Process without DB writes', false)
+		.option('--skip-revalidation', 'Skip landing-page ISR revalidation after publish', false)
 		.option('--status <status>')
 		.option('--concurrency <concurrency>', 'Parallel worker count', '5')
 		.action(async (rawOptions) => {
@@ -329,6 +362,7 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 				limit: Number(rawOptions.limit ?? 100),
 				file: rawOptions.file,
 				dryRun: Boolean(rawOptions.dryRun),
+				skipRevalidation: Boolean(rawOptions.skipRevalidation),
 				status: rawOptions.status,
 				concurrency: Number(rawOptions.concurrency ?? 5),
 			};

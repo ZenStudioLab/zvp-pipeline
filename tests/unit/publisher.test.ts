@@ -88,6 +88,39 @@ describe("publishSheet", () => {
     ]);
   });
 
+  it("completes publish when revalidation fails after durable writes", async () => {
+    const insertedSheets: Array<Record<string, unknown>> = [];
+    const fingerprintUpdates: Array<Record<string, unknown>> = [];
+
+    const result = await publishSheet(createPublisherInput(), {
+      insertSheet: async (sheet) => {
+        insertedSheets.push(sheet);
+        return { id: "sheet_1", slug: String(sheet.slug) };
+      },
+      promoteCanonicalFamily: async () => undefined,
+      updateFingerprint: async (update) => {
+        fingerprintUpdates.push(update);
+      },
+      revalidatePaths: async () => {
+        throw new Error("ISR unavailable");
+      },
+    });
+
+    expect(result).toEqual({
+      outcome: "published",
+      revalidatedPaths: [
+        "/",
+        "/catalog",
+        "/artist/hans-zimmer",
+        "/genre/soundtrack",
+        "/sheet/interstellar-main-theme-ost-hans-zimmer",
+      ],
+      sheetId: "sheet_1",
+    });
+    expect(insertedSheets).toHaveLength(1);
+    expect(fingerprintUpdates).toHaveLength(1);
+  });
+
   it("preserves canonical fingerprint pointer when publishing alternates", async () => {
     const insertedSheets: Array<Record<string, unknown>> = [];
     const fingerprintUpdates: Array<Record<string, unknown>> = [];
@@ -324,5 +357,16 @@ describe("publishSheet", () => {
     });
     expect(insertCount).toBe(0);
     expect(revalidateCount).toBe(0);
+  });
+
+  it("fails fast when required metadata ids are missing", async () => {
+    await expect(
+      publishSheet(createPublisherInput({ artist: { id: "", slug: "hans-zimmer", name: "Hans Zimmer" } }), {
+        insertSheet: async () => ({ id: "sheet_invalid", slug: "invalid" }),
+        promoteCanonicalFamily: async () => undefined,
+        updateFingerprint: async () => undefined,
+        revalidatePaths: async () => undefined,
+      }),
+    ).rejects.toThrow("publisher invariant: missing artist.id");
   });
 });

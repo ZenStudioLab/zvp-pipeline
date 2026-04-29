@@ -43,6 +43,8 @@ type RuntimeRepositoryOptions = {
   siteUrl?: string;
   revalidationSecret?: string;
   fetchImpl?: typeof fetch;
+  disableRevalidation?: boolean;
+  allowMissingReferenceData?: boolean;
 };
 
 type SaveJobStatusEvent = {
@@ -87,6 +89,9 @@ type SeedSummary = {
   genres: number;
 };
 
+const MISSING_REFERENCE_DATA_ERROR =
+  "Pipeline reference data is missing. Run 'node dist/cli.js seed' to seed genres and difficulties before running the pipeline.";
+
 function normalizeLookupKey(value: string): string {
   return value
     .normalize("NFD")
@@ -99,6 +104,14 @@ function normalizeLookupKey(value: string): string {
 
 function terminalStatus(status: PersistedPipelineStatus): boolean {
   return status === "published" || status === "rejected" || status === "failed";
+}
+
+function isTruthyEnvValue(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
 function isCatalogStatusFilter(value: string): value is CatalogStatusFilter {
@@ -162,6 +175,11 @@ export async function createPipelineRuntimeRepository(
   );
   const revalidationSecret =
     options.revalidationSecret ?? process.env.REVALIDATION_SECRET ?? "";
+  const disableRevalidation =
+    options.disableRevalidation ??
+    isTruthyEnvValue(process.env.DISABLE_REVALIDATION);
+  const allowMissingReferenceData =
+    options.allowMissingReferenceData ?? false;
 
   let genreRows: (typeof genre.$inferSelect)[];
   let difficultyRows: (typeof difficulty.$inferSelect)[];
@@ -181,6 +199,21 @@ export async function createPipelineRuntimeRepository(
     }
 
     throw error;
+  }
+
+  if (
+    !allowMissingReferenceData &&
+    (genreRows.length === 0 || difficultyRows.length === 0)
+  ) {
+    if (ownsDbClient) {
+      try {
+        await db.$client.end({ timeout: 5 });
+      } catch {
+        // Preserve the missing reference data failure as the primary error.
+      }
+    }
+
+    throw new Error(MISSING_REFERENCE_DATA_ERROR);
   }
 
   async function getExistingArtistNames(): Promise<string[]> {
@@ -212,9 +245,24 @@ export async function createPipelineRuntimeRepository(
         name: input.name,
         slug: input.slug,
       })
+      .onConflictDoNothing({ target: artist.slug })
       .returning();
 
-    return mapArtistRecord(inserted);
+    if (inserted) {
+      return mapArtistRecord(inserted);
+    }
+
+    const [existing] = await db
+      .select()
+      .from(artist)
+      .where(eq(artist.slug, input.slug))
+      .limit(1);
+
+    if (existing) {
+      return mapArtistRecord(existing);
+    }
+
+    throw new Error(`Failed to create artist for slug: ${input.slug}`);
   }
 
   async function findFingerprintByKey(normalizedKey: string) {
@@ -252,6 +300,21 @@ export async function createPipelineRuntimeRepository(
       })
       .from(pipelineJob)
       .where(eq(pipelineJob.sourceUrl, sourceUrl))
+      .limit(1);
+
+    return record ?? null;
+  }
+
+  async function findSheetBySourceUrl(
+    sourceUrl: string,
+  ): Promise<{ id: string; slug: string } | null> {
+    const [record] = await db
+      .select({
+        id: sheet.id,
+        slug: sheet.slug,
+      })
+      .from(sheet)
+      .where(eq(sheet.sourceUrl, sourceUrl))
       .limit(1);
 
     return record ?? null;
@@ -412,7 +475,12 @@ export async function createPipelineRuntimeRepository(
   }
 
   async function revalidatePaths(paths: string[]): Promise<void> {
-    if (!siteUrl || !revalidationSecret || paths.length === 0) {
+    if (
+      disableRevalidation ||
+      !siteUrl ||
+      !revalidationSecret ||
+      paths.length === 0
+    ) {
       return;
     }
 
@@ -794,6 +862,7 @@ export async function createPipelineRuntimeRepository(
     createArtist,
     findFingerprintByKey,
     getJobBySourceUrl,
+    findSheetBySourceUrl,
     saveJobStatus,
     insertSheet,
     promoteCanonicalFamily,

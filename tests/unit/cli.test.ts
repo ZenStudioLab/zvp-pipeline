@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../../src/cli.js";
+import { createPipelineRuntimeRepository } from "../../src/lib/runtime-repository.js";
 
 vi.mock("../../src/env.js", () => ({
   loadPipelineEnvFile: vi.fn(),
@@ -118,6 +119,7 @@ describe("runCli", () => {
       limit: 100,
       file: "./test.mid",
       dryRun: true,
+      skipRevalidation: false,
       status: undefined,
       concurrency: 3,
     });
@@ -127,6 +129,24 @@ describe("runCli", () => {
     expect(stdout).toHaveBeenCalledWith(
       expect.stringContaining("qualityReasons"),
     );
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards the skip revalidation flag to the run command", async () => {
+    const { deps, runCommand, dispose } = createDependencies();
+
+    const exitCode = await runCli(["run", "--skip-revalidation"], deps);
+
+    expect(exitCode).toBe(0);
+    expect(runCommand).toHaveBeenCalledWith({
+      source: undefined,
+      limit: 100,
+      file: undefined,
+      dryRun: false,
+      skipRevalidation: true,
+      status: undefined,
+      concurrency: 5,
+    });
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
@@ -289,6 +309,78 @@ describe("runCli", () => {
     expect(exitCode).toBe(0);
     expect(seedCommand).toHaveBeenCalledTimes(1);
     expect(stdout).toHaveBeenCalledWith("Seeded 4 difficulties and 3 genres.");
+  });
+
+  it("allows seed to run even when normal runtime bootstrap would reject missing reference data", async () => {
+    const writeSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const errorSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    vi.mocked(createPipelineRuntimeRepository).mockImplementationOnce(
+      async (options) => {
+        if (!options?.allowMissingReferenceData) {
+          throw new Error(
+            "Pipeline reference data is missing. Run 'node dist/cli.js seed' to seed genres and difficulties before running the pipeline.",
+          );
+        }
+
+        return {
+          db: {} as never,
+          genres: [],
+          difficulties: [],
+          getExistingArtistNames: vi.fn(async () => []),
+          findArtistByNormalizedName: vi.fn(async () => null),
+          createArtist: vi.fn(async () => ({
+            id: "artist_1",
+            slug: "artist-1",
+            name: "Artist 1",
+          })),
+          findFingerprintByKey: vi.fn(async () => null),
+          getJobBySourceUrl: vi.fn(async () => null),
+          findSheetBySourceUrl: vi.fn(async () => null),
+          saveJobStatus: vi.fn(async () => undefined),
+          insertSheet: vi.fn(async () => ({ id: "sheet_1", slug: "sheet-1" })),
+          promoteCanonicalFamily: vi.fn(async () => undefined),
+          updateFingerprint: vi.fn(async () => undefined),
+          revalidatePaths: vi.fn(async () => undefined),
+          getSheetForAiEnrichment: vi.fn(async () => null),
+          updateSheetAiMetadata: vi.fn(async () => undefined),
+          listFingerprintsForRerank: vi.fn(async () => []),
+          listVersionsForFingerprint: vi.fn(async () => []),
+          swapCanonicalSheet: vi.fn(async () => undefined),
+          listJobs: vi.fn(async () => []),
+          getStats: vi.fn(async () => ({
+            totalJobs: 0,
+            published: 0,
+            reviewQueue: 0,
+            rejected: 0,
+            failed: 0,
+            averageQualityScore: 0,
+            reasons: {},
+          })),
+          seedReferenceData: vi.fn(async () => ({ difficulties: 4, genres: 3 })),
+          getCatalogSourceUrlsByStatus: vi.fn(async () => []),
+          close: vi.fn(async () => undefined),
+        };
+      },
+    );
+
+    const exitCode = await runCli(["seed"]);
+
+    expect(exitCode).toBe(0);
+    expect(createPipelineRuntimeRepository).toHaveBeenCalledWith({
+      allowMissingReferenceData: true,
+    });
+    expect(writeSpy).toHaveBeenCalledWith(
+      "Seeded 4 difficulties and 3 genres.\n",
+    );
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    writeSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it("reports cleanup failures without masking command completion", async () => {

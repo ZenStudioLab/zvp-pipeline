@@ -72,6 +72,7 @@ Copy `.env.example` to `.env` and fill in the values:
 DATABASE_URL=postgresql://...     # Supabase pooler connection string
 REVALIDATION_SECRET=...           # Shared secret for Next.js ISR revalidation
 SITE_URL=https://zenpiano.art
+DISABLE_REVALIDATION=false        # Optional: skip publish-time ISR revalidation
 OPENAI_API_KEY=sk-...
 ```
 
@@ -121,6 +122,7 @@ node dist/cli.js run [options]
 #   --limit <n>           Maximum number of entries to process (default: 100)
 #   --file <path>         Process a single MIDI file directly
 #   --dry-run             Run all stages but skip DB writes
+#   --skip-revalidation   Skip landing-page ISR revalidation for this run
 #   --status <status>     Filter catalog entries by status
 #   --concurrency <n>     Parallel workers (default: 5)
 

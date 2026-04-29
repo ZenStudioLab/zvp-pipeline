@@ -45,6 +45,7 @@ Edit `.env`:
 | `DATABASE_URL` | ✅ | Supabase PostgreSQL pooler connection string |
 | `REVALIDATION_SECRET` | ISR only | Shared bearer token for Next.js ISR revalidation (see below) |
 | `SITE_URL` | ISR only | Base URL of the landing page (see below) |
+| `DISABLE_REVALIDATION` | optional | Skip publish-time ISR revalidation without disabling sheet publication |
 | `OPENAI_API_KEY` | optional | OpenAI key for GPT-4o-mini enrichment (see below) |
 
 #### `REVALIDATION_SECRET`
@@ -52,6 +53,10 @@ Edit `.env`:
 After a sheet is published, the pipeline calls `POST {SITE_URL}/api/revalidate` with an `Authorization: Bearer <secret>` header to tell Next.js to purge and regenerate the static pages for that sheet, its artist, its genre, `/catalog`, and `/`. The landing page reads the same `REVALIDATION_SECRET` env var and rejects requests that don't match. **Both sides must share the same value** — set it in `landing-page/.env.local` (local dev) or in Vercel environment variables (production). See the Route Handler at [landing-page/src/app/api/revalidate/route.ts](../landing-page/src/app/api/revalidate/route.ts) and the full ISR setup in [specs/001-sheet-page-pipeline/quickstart.md](../specs/001-sheet-page-pipeline/quickstart.md).
 
 If either `SITE_URL` or `REVALIDATION_SECRET` is missing, the `revalidatePaths` call is silently skipped — sheets are still published to the database, but the Next.js cache won't be purged until the next full deploy or a manual revalidation.
+
+#### `DISABLE_REVALIDATION`
+
+**Optional.** Set `DISABLE_REVALIDATION=true` to suppress all publish-time ISR requests from the pipeline. This only disables the cache invalidation HTTP call; sheets are still inserted and published normally. This is useful when the landing page is unavailable, misconfigured, or you intentionally want to defer cache invalidation.
 
 #### `SITE_URL`
 
@@ -102,6 +107,9 @@ node dist/cli.js run --limit 20 --concurrency 3
 
 # Process a single local MIDI file
 node dist/cli.js run --file path/to/song.mid
+
+# Publish normally but skip ISR revalidation for this run only
+node dist/cli.js run --skip-revalidation
 ```
 
 | Option | Default | Description |
@@ -110,6 +118,7 @@ node dist/cli.js run --file path/to/song.mid
 | `--limit <n>` | `100` | Maximum entries to process |
 | `--file <path>` | — | Process a single MIDI file instead of the catalog |
 | `--dry-run` | `false` | Skip all database writes |
+| `--skip-revalidation` | `false` | Skip publish-time ISR cache invalidation for this run |
 | `--status <status>` | — | Filter catalog entries by their current status |
 | `--concurrency <n>` | `5` | Number of parallel workers |
 

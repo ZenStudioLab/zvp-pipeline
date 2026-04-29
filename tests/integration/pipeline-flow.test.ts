@@ -64,6 +64,8 @@ class InMemoryPipelineRepository {
   public readonly sheets: Array<Record<string, unknown>> = [];
   public readonly revalidated: string[][] = [];
   public readonly jobStatuses: Array<Record<string, unknown>> = [];
+  public revalidationFailureCount = 0;
+  public insertAttempts = 0;
 
   private readonly jobs = new Map<
     string,
@@ -128,12 +130,27 @@ class InMemoryPipelineRepository {
   async insertSheet(
     sheet: Record<string, unknown>,
   ): Promise<{ id: string; slug: string }> {
+    this.insertAttempts += 1;
     const inserted: Record<string, unknown> = {
       id: `sheet_${this.sheets.length + 1}`,
       ...sheet,
     };
     this.sheets.push(inserted);
     return { id: String(inserted.id), slug: String(inserted["slug"]) };
+  }
+
+  async findSheetBySourceUrl(
+    sourceUrl: string,
+  ): Promise<{ id: string; slug: string } | null> {
+    const existing = this.sheets.find((entry) => entry["sourceUrl"] === sourceUrl);
+    if (!existing) {
+      return null;
+    }
+
+    return {
+      id: String(existing["id"]),
+      slug: String(existing["slug"]),
+    };
   }
 
   async updateFingerprint(update: {
@@ -154,6 +171,11 @@ class InMemoryPipelineRepository {
   }
 
   async revalidatePaths(paths: string[]): Promise<void> {
+    if (this.revalidationFailureCount > 0) {
+      this.revalidationFailureCount -= 1;
+      throw new Error("ISR unavailable");
+    }
+
     this.revalidated.push(paths);
   }
 }
@@ -270,5 +292,81 @@ describe("processPipelineJob", () => {
       repository.jobStatuses.some((status) => status.status === "published"),
     ).toBe(true);
     expect(repository.sheets).toHaveLength(1);
+  });
+
+  it("fails with a clear invariant error when enrichment metadata ids are missing", async () => {
+    class InvalidMetadataRepository extends InMemoryPipelineRepository {
+      override async createArtist(input: {
+        name: string;
+        slug: string;
+        normalizedName: string;
+      }): Promise<ArtistRecord> {
+        const artist = await super.createArtist(input);
+        return { ...artist, id: "" };
+      }
+    }
+
+    const repository = new InvalidMetadataRepository();
+
+    await expect(
+      processPipelineJob(
+        {
+          sourceUrl: "https://example.com/missing-metadata.mid",
+          sourceSite: "freemidi",
+          rawTitle: "Broken Metadata Song",
+          rawArtist: "Hans Zimmer",
+          file: createPipelineMidi(),
+          dryRun: false,
+        },
+        repository,
+      ),
+    ).rejects.toThrow("publisher invariant: missing artist.id");
+  });
+
+  it("repairs partially published jobs by reusing an existing sheet for the same source url", async () => {
+    const repository = new InMemoryPipelineRepository();
+    repository.revalidationFailureCount = 1;
+
+    const input = {
+      sourceUrl: "https://example.com/partial.mid",
+      sourceSite: "freemidi",
+      rawTitle: "Partial Publish Song",
+      rawArtist: "Hans Zimmer",
+      youtubeUrl: "https://www.youtube.com/watch?v=zSWdZVtXT7E",
+      file: createPipelineMidi(),
+      dryRun: false,
+    };
+
+    const firstRun = await processPipelineJob(input, repository);
+
+    expect(firstRun).toEqual({
+      idempotent: false,
+      outcome: "published",
+      sheetId: "sheet_1",
+      transitions: ["pending", "converting", "scoring", "dedup", "published"],
+    });
+    expect(repository.sheets).toHaveLength(1);
+    expect(repository.insertAttempts).toBe(1);
+    expect(await repository.getJobBySourceUrl(input.sourceUrl)).toEqual({
+      status: "published",
+      sheetId: "sheet_1",
+    });
+
+    await repository.saveJobStatus({
+      sourceUrl: input.sourceUrl,
+      status: "dedup",
+      sheetId: null,
+    });
+
+    const secondRun = await processPipelineJob(input, repository);
+
+    expect(secondRun).toEqual({
+      idempotent: true,
+      outcome: "published",
+      sheetId: "sheet_1",
+      transitions: ["published"],
+    });
+    expect(repository.sheets).toHaveLength(1);
+    expect(repository.insertAttempts).toBe(1);
   });
 });

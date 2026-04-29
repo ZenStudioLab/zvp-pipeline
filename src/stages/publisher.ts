@@ -79,6 +79,12 @@ function normalizePersistedInteger(value: number): number {
   return Math.round(value);
 }
 
+function assertPublisherInvariant(id: string, field: string): void {
+  if (!id) {
+    throw new Error(`publisher invariant: missing ${field}`);
+  }
+}
+
 export async function publishSheet(
   input: PublisherInput,
   repository: PublisherRepository,
@@ -103,6 +109,10 @@ export async function publishSheet(
       revalidatedPaths: [],
     };
   }
+
+  assertPublisherInvariant(input.artist.id, "artist.id");
+  assertPublisherInvariant(input.genre.id, "genre.id");
+  assertPublisherInvariant(input.difficulty.id, "difficulty.id");
 
   const insertedSheet = await repository.insertSheet({
     slug: input.slug,
@@ -158,7 +168,11 @@ export async function publishSheet(
   const revalidatedPaths =
     outcome === "published" ? buildRevalidationPaths(input) : [];
   if (revalidatedPaths.length > 0) {
-    await repository.revalidatePaths(revalidatedPaths);
+    try {
+      await repository.revalidatePaths(revalidatedPaths);
+    } catch {
+      // Revalidation is best-effort after durable writes succeed.
+    }
   }
 
   return {
