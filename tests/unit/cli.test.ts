@@ -20,6 +20,9 @@ vi.mock("../../src/lib/runtime-repository.js", () => ({
     })),
     seedReferenceData: vi.fn(async () => ({ difficulties: 0, genres: 0 })),
     getCatalogSourceUrlsByStatus: vi.fn(async () => []),
+    findAssetBySha256: vi.fn(async () => null),
+    insertAsset: vi.fn(async () => ({ id: "asset_mock" })),
+    listJobsWithAssets: vi.fn(async () => []),
     close: vi.fn(async () => undefined),
   })),
 }));
@@ -75,6 +78,14 @@ function createDependencies() {
       },
     },
   }));
+  const importCommand = vi.fn(async () => ({
+    filesScanned: 0,
+    filesMatched: 0,
+    filesUploaded: 0,
+    rowsCreated: 0,
+    dryRun: false,
+    importRunId: null,
+  }));
   const statsCommand = vi.fn(async () => ({
     totalJobs: 12,
     published: 8,
@@ -89,6 +100,7 @@ function createDependencies() {
   return {
     deps: {
       runCommand,
+      importCommand,
       statsCommand,
       seedCommand,
       dispose,
@@ -97,6 +109,7 @@ function createDependencies() {
     },
     dispose,
     runCommand,
+    importCommand,
     statsCommand,
     seedCommand,
     stdout,
@@ -122,6 +135,7 @@ describe("runCli", () => {
       skipRevalidation: false,
       status: undefined,
       concurrency: 3,
+      sourceItems: false,
     });
     expect(stdout).toHaveBeenCalledWith(
       expect.stringContaining("FATAL_MAX_NOTE_DENSITY"),
@@ -146,6 +160,7 @@ describe("runCli", () => {
       skipRevalidation: true,
       status: undefined,
       concurrency: 5,
+      sourceItems: false,
     });
     expect(dispose).toHaveBeenCalledTimes(1);
   });
@@ -363,6 +378,9 @@ describe("runCli", () => {
           })),
           seedReferenceData: vi.fn(async () => ({ difficulties: 4, genres: 3 })),
           getCatalogSourceUrlsByStatus: vi.fn(async () => []),
+          findAssetBySha256: vi.fn(async () => null),
+          insertAsset: vi.fn(async () => ({ id: "asset_mock" })),
+          listJobsWithAssets: vi.fn(async () => []),
           close: vi.fn(async () => undefined),
         };
       },

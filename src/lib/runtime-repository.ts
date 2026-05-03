@@ -1,11 +1,14 @@
 import {
+  arrangement,
   artist,
   createDbClient,
   difficulty,
   genre,
   pipelineJob,
   sheet,
+  sheetAsset,
   songFingerprint,
+  work,
   type ZenDatabase,
 } from "@zen/db";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
@@ -845,6 +848,86 @@ export async function createPipelineRuntimeRepository(
     return rows.map((row) => row.sourceUrl);
   }
 
+  async function findAssetBySha256(
+    sha256: string,
+  ): Promise<{ id: string; publicUrl: string | null } | null> {
+    const [record] = await db
+      .select({ id: sheetAsset.id, publicUrl: sheetAsset.publicUrl })
+      .from(sheetAsset)
+      .where(eq(sheetAsset.sha256, sha256))
+      .limit(1);
+    return record ?? null;
+  }
+
+  async function insertAssetRecord(input: {
+    arrangementId: string | null;
+    assetType: "original_midi";
+    storageProvider: string;
+    bucket: string;
+    objectPath: string;
+    publicUrl: string | null;
+    mimeType: string;
+    byteSize: bigint;
+    sha256: string;
+  }): Promise<{ id: string }> {
+    const [inserted] = await db
+      .insert(sheetAsset)
+      .values({
+        arrangementId: input.arrangementId,
+        assetType: input.assetType,
+        storageProvider: input.storageProvider,
+        bucket: input.bucket,
+        objectPath: input.objectPath,
+        publicUrl: input.publicUrl,
+        mimeType: input.mimeType,
+        byteSize: input.byteSize,
+        sha256: input.sha256,
+      })
+      .returning({ id: sheetAsset.id });
+    return inserted;
+  }
+
+  async function listJobsWithAssets(filters: {
+    source?: string;
+    status?: string;
+    limit: number;
+  }): Promise<
+    Array<{
+      sourceUrl: string;
+      sourceSite: string | null;
+      rawTitle: string | null;
+      arrangementId: string | null;
+      bucket: string;
+      objectPath: string;
+      storageProvider: string | null;
+    }>
+  > {
+    const conditions = [
+      filters.source ? eq(pipelineJob.sourceSite, filters.source) : undefined,
+      filters.status
+        ? eq(pipelineJob.status, filters.status as typeof pipelineJob.status._.data)
+        : undefined,
+    ].filter(Boolean);
+
+    const rows = await db
+      .select({
+        sourceUrl: pipelineJob.sourceUrl,
+        sourceSite: pipelineJob.sourceSite,
+        rawTitle: pipelineJob.rawTitle,
+        arrangementId: pipelineJob.sourceItemId,
+        bucket: sheetAsset.bucket,
+        objectPath: sheetAsset.objectPath,
+        storageProvider: sheetAsset.storageProvider,
+      })
+      .from(pipelineJob)
+      .innerJoin(sheetAsset, eq(pipelineJob.inputAssetId, sheetAsset.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(pipelineJob.createdAt))
+      .limit(filters.limit);
+
+    return rows;
+  }
+
   async function close(): Promise<void> {
     if (!ownsDbClient) {
       return;
@@ -877,6 +960,9 @@ export async function createPipelineRuntimeRepository(
     getStats,
     seedReferenceData,
     getCatalogSourceUrlsByStatus,
+    findAssetBySha256,
+    insertAsset: insertAssetRecord,
+    listJobsWithAssets,
     close,
   };
 }
