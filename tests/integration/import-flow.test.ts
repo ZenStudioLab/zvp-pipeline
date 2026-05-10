@@ -130,7 +130,7 @@ describe("import command", () => {
     });
   });
 
-  it("accepts dry-run and default timing values", async () => {
+  it("accepts dry-run without requiring CLI timing overrides", async () => {
     const deps = createMockImportDeps();
     const importSpy = vi.spyOn(deps, "importCommand");
 
@@ -148,9 +148,9 @@ describe("import command", () => {
     expect(importSpy).toHaveBeenCalledWith({
       exportFile: "/tmp/test/export.json",
       downloadDir: "/tmp/test/downloads",
-      timingX: 8,
-      timingY: 20,
-      timingZ: 10,
+      timingX: undefined,
+      timingY: undefined,
+      timingZ: undefined,
       limit: undefined,
       dryRun: true,
     });

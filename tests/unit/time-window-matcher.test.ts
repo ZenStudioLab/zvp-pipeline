@@ -42,6 +42,88 @@ const defaultTiming: TimingConfig = { x: 3, y: 5, z: 15 };
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('matchFilesToRecords', () => {
+  it('matches when the scanned filename differs from download_filename but timestamps align', () => {
+    const t0 = new Date('2026-05-01T10:00:00.000Z');
+
+    const files = [
+      scannedFile({
+        filename: 'actual-scanned-name.mid',
+        birthtime: new Date(t0.getTime() + 8_000),
+      }),
+    ];
+
+    const records = [
+      record(1, 'Filename Mismatch',
+        variant({
+          difficulty_label: 'Intermediate',
+          download_filename: 'musescore-export-name.mid',
+          download_started_at: t0.toISOString(),
+        }),
+      ),
+    ];
+
+    const { matches, unmatchedFiles } = matchFilesToRecords(files, records, defaultTiming);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].file.filename).toBe('actual-scanned-name.mid');
+    expect(matches[0].variant.download_filename).toBe('musescore-export-name.mid');
+    expect(unmatchedFiles).toHaveLength(0);
+  });
+
+  it('respects the default maximum matching window instead of matching far outside it', () => {
+    const t0 = new Date('2026-05-01T10:00:00.000Z');
+
+    const files = [
+      scannedFile({
+        filename: 'too-far.mid',
+        birthtime: new Date(t0.getTime() + 240_000),
+      }),
+    ];
+
+    const records = [
+      record(1, 'Far Away',
+        variant({
+          difficulty_label: 'Beginner',
+          download_started_at: t0.toISOString(),
+        }),
+      ),
+    ];
+
+    const { matches } = matchFilesToRecords(files, records, defaultTiming);
+
+    expect(matches).toHaveLength(0);
+  });
+
+  it('respects an overridden maximum matching window when provided', () => {
+    const t0 = new Date('2026-05-01T10:00:00.000Z');
+
+    const files = [
+      scannedFile({
+        filename: 'still-too-far.mid',
+        birthtime: new Date(t0.getTime() + 180_000),
+      }),
+    ];
+
+    const records = [
+      record(1, 'Override Window',
+        variant({
+          difficulty_label: 'Beginner',
+          download_started_at: t0.toISOString(),
+        }),
+      ),
+    ];
+
+    const { matches } = matchFilesToRecords(files, records, {
+      x: 3,
+      y: 5,
+      z: 15,
+      maxMatchingWindowSeconds: 300,
+    });
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].timeDeltaSeconds).toBe(180);
+  });
+
   it('returns high confidence for a 1:1 match within 30s', () => {
     const t0 = new Date('2026-05-01T10:00:00.000Z');
 
@@ -152,12 +234,9 @@ describe('matchFilesToRecords', () => {
 
     const { matches, unmatchedFiles } = matchFilesToRecords(files, records, defaultTiming);
 
-    // The variant WILL still match (greedy), but with low confidence
-    expect(matches).toHaveLength(1);
-    expect(matches[0].confidence).toBe('low');
-    expect(matches[0].timeDeltaSeconds).toBeGreaterThan(60);
-    expect(matches[0].reviewStatus).toBe('needs_review');
-    // The file IS matched (greedy), but given the poor delta, it's essentially unmatched
+    expect(matches).toHaveLength(0);
+    expect(unmatchedFiles).toHaveLength(1);
+    expect(unmatchedFiles[0].filename).toBe('orphan.mid');
   });
 
   it('detects no unmatched files when all are matched', () => {
@@ -373,7 +452,7 @@ describe('matchFilesToRecords', () => {
         }),
         variant({
           difficulty_label: 'Beginner',  // launched later
-          download_started_at: new Date(t0.getTime() + 30_000).toISOString(),
+          download_started_at: new Date(t0.getTime() + 10_000).toISOString(),
         }),
       ),
     ];
@@ -646,6 +725,50 @@ describe('matchFilesToRecords', () => {
 
     expect(work2Matches).toHaveLength(1);
     expect(work2Matches[0].file.filename).toBe('w2_beg.mid');
+  });
+
+  it('uses timing_config.z to split a large launch gap into a new work boundary', () => {
+    const t0 = new Date('2026-05-01T10:00:00.000Z');
+    const timing: TimingConfig = { x: 3, y: 5, z: 15 };
+
+    const files = [
+      scannedFile({ filename: 'first-work.mid', birthtime: new Date(t0.getTime() + 5_000) }),
+      scannedFile({ filename: 'second-work.mid', birthtime: new Date(t0.getTime() + 65_000) }),
+    ];
+
+    const records = [
+      record(1, 'Boundary Source',
+        variant({ difficulty_label: 'Beginner', download_started_at: t0.toISOString() }),
+        variant({ difficulty_label: 'Beginner', download_started_at: new Date(t0.getTime() + 60_000).toISOString() }),
+      ),
+    ];
+
+    const { matches } = matchFilesToRecords(files, records, timing);
+
+    expect(matches.map((match) => match.workOrder)).toEqual([1, 2]);
+  });
+
+  it('uses timing_config.y for inter-variant timing-gap review checks', () => {
+    const t0 = new Date('2026-05-01T10:00:00.000Z');
+    const timing: TimingConfig = { x: 3, y: 60, z: 15 };
+
+    const files = [
+      scannedFile({ filename: 'beginner.mid', birthtime: new Date(t0.getTime() + 3_000) }),
+      scannedFile({ filename: 'advanced.mid', birthtime: new Date(t0.getTime() + 23_000) }),
+    ];
+
+    const records = [
+      record(1, 'Y Timing Source',
+        variant({ difficulty_label: 'Beginner', download_started_at: t0.toISOString() }),
+        variant({ difficulty_label: 'Advanced', download_started_at: new Date(t0.getTime() + 20_000).toISOString() }),
+      ),
+    ];
+
+    const { matches } = matchFilesToRecords(files, records, timing);
+
+    expect(matches).toHaveLength(2);
+    expect(matches.every((match) => match.reviewStatus === 'needs_review')).toBe(true);
+    expect(matches[0].matchReason).toContain('inter-variant gap');
   });
 
   it('handles empty files array gracefully', () => {

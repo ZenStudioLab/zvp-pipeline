@@ -7,11 +7,12 @@
 
 import type { ScannedFile } from './download-scanner.js';
 
-/** x = per-variant launch spacing (s), y = inter-work gap (s), z = variant spacing within a work (s) */
+/** x = click-to-download delay (s), y = inter-variant delay (s), z = inter-work delay (s). */
 export interface TimingConfig {
   x: number;
   y: number;
   z: number;
+  maxMatchingWindowSeconds?: number;
 }
 
 export type MatchConfidence = 'high' | 'medium' | 'low';
@@ -24,6 +25,7 @@ export interface ImportExportVariant {
   download_started_at: string | null;
   score_id?: string;
   score_url?: string;
+  [key: string]: unknown;
 }
 
 /** Subset of the extension's ExportRecord – fields the matcher needs. */
@@ -31,6 +33,7 @@ export interface ImportExportRecord {
   work_order: number;
   canonical_title: string;
   variants: ImportExportVariant[];
+  [key: string]: unknown;
 }
 
 /** Result of matching one variant to one scanned file. */

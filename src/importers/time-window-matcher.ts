@@ -20,6 +20,7 @@ import type {
 const DEFAULT_TIMING: TimingConfig = { x: 3, y: 0, z: 15 };
 const HIGH_CONFIDENCE_WINDOW_SEC = 30;
 const MEDIUM_CONFIDENCE_WINDOW_SEC = 60;
+const DEFAULT_MAX_MATCHING_WINDOW_SEC = 60;
 const SIZE_DIVERGENCE_RATIO = 5;
 
 /** Difficulty progression order for structural validation. */
@@ -41,6 +42,7 @@ interface VariantEntry {
   record: ImportExportRecord;
   variant: ImportExportVariant;
   startedAtMs: number;
+  effectiveWorkOrder: number;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -51,6 +53,34 @@ function normalizeDifficulty(label: string): string {
 
 function difficultyLevel(label: string): number {
   return DIFFICULTY_ORDER[normalizeDifficulty(label)] ?? 99;
+}
+
+function assignEffectiveWorkOrders(
+  entries: VariantEntry[],
+  timingConfig: TimingConfig,
+): void {
+  let currentWorkOrder = entries[0]?.record.work_order ?? 1;
+  const boundaryThresholdSeconds = timingConfig.x + timingConfig.y + timingConfig.z;
+
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    const previous = entries[index - 1];
+
+    if (!previous) {
+      currentWorkOrder = entry.record.work_order;
+    } else if (entry.record.work_order !== previous.record.work_order) {
+      currentWorkOrder = entry.record.work_order;
+    } else {
+      const launchGapSeconds = (entry.startedAtMs - previous.startedAtMs) / 1000;
+      const previousLevel = difficultyLevel(previous.variant.difficulty_label);
+      const currentLevel = difficultyLevel(entry.variant.difficulty_label);
+      if (launchGapSeconds > boundaryThresholdSeconds && currentLevel <= previousLevel) {
+        currentWorkOrder += 1;
+      }
+    }
+
+    entry.effectiveWorkOrder = currentWorkOrder;
+  }
 }
 
 /** Check whether file sizes in a set diverge by more than 5×. */
@@ -83,6 +113,7 @@ export function matchFilesToRecords(
   records: ImportExportRecord[],
   timingConfig: TimingConfig = DEFAULT_TIMING,
 ): MatchOutput {
+  const maxMatchingWindowSec = timingConfig.maxMatchingWindowSeconds ?? DEFAULT_MAX_MATCHING_WINDOW_SEC;
   // ── 1. Flatten variants with record context ──────────────────────────
   const variantEntries: VariantEntry[] = [];
 
@@ -93,12 +124,13 @@ export function matchFilesToRecords(
       const startedAtMs = new Date(variant.download_started_at).getTime();
       if (isNaN(startedAtMs)) continue;
 
-      variantEntries.push({ record, variant, startedAtMs });
+      variantEntries.push({ record, variant, startedAtMs, effectiveWorkOrder: record.work_order });
     }
   }
 
   // Sort by download_started_at (launch order)
   variantEntries.sort((a, b) => a.startedAtMs - b.startedAtMs);
+  assignEffectiveWorkOrders(variantEntries, timingConfig);
 
   // ── 2. Greedy matching ──────────────────────────────────────────────
   const matchedFileIndices = new Set<number>();
@@ -123,13 +155,16 @@ export function matchFilesToRecords(
     // Pick the closest candidate
     candidates.sort((a, b) => a.deltaSec - b.deltaSec);
     const best = candidates[0];
+    if (best.deltaSec > maxMatchingWindowSec) {
+      continue;
+    }
     matchedFileIndices.add(best.index);
     const file = files[best.index];
 
     // Track files per work for size-divergence check
-    const wf = workFileMap.get(ve.record.work_order) ?? [];
+    const wf = workFileMap.get(ve.effectiveWorkOrder) ?? [];
     wf.push(file);
-    workFileMap.set(ve.record.work_order, wf);
+    workFileMap.set(ve.effectiveWorkOrder, wf);
 
     // Determine effective window: widen if siblings in same work diverge >5×
     const siblings = wf.filter((f) => f.absolutePath !== file.absolutePath);
@@ -169,7 +204,7 @@ export function matchFilesToRecords(
 
     matches.push({
       file,
-      workOrder: ve.record.work_order,
+      workOrder: ve.effectiveWorkOrder,
       canonicalTitle: ve.record.canonical_title,
       variant: ve.variant,
       confidence,
@@ -181,7 +216,7 @@ export function matchFilesToRecords(
   }
 
   // ── 3. Structural validation ────────────────────────────────────────
-  applyStructuralValidation(matches, workFileMap);
+  applyStructuralValidation(matches, workFileMap, timingConfig);
 
   // ── 4. Unmatched files ──────────────────────────────────────────────
   const unmatchedFiles = files.filter(
@@ -203,6 +238,7 @@ export function matchFilesToRecords(
 function applyStructuralValidation(
   matches: MatchResult[],
   workFileMap: Map<number, ScannedFile[]>,
+  timingConfig: TimingConfig,
 ): void {
   // Group matches by work_order
   const workGroups = new Map<number, MatchResult[]>();
@@ -249,6 +285,26 @@ function applyStructuralValidation(
       for (const m of group) {
         m.reviewStatus = 'needs_review';
         m.matchReason = `Out-of-order difficulty progression within work ${m.workOrder}`;
+      }
+    }
+
+    const launchSorted = [...group].sort((a, b) => {
+      const aStarted = new Date(a.variant.download_started_at ?? '').getTime();
+      const bStarted = new Date(b.variant.download_started_at ?? '').getTime();
+      return aStarted - bStarted;
+    });
+    const hasInterVariantGapIssue = launchSorted.some((match, index) => {
+      if (index === 0) return false;
+      const previousStarted = new Date(launchSorted[index - 1].variant.download_started_at ?? '').getTime();
+      const currentStarted = new Date(match.variant.download_started_at ?? '').getTime();
+      if (Number.isNaN(previousStarted) || Number.isNaN(currentStarted)) return false;
+      return (currentStarted - previousStarted) / 1000 < timingConfig.y;
+    });
+
+    if (hasInterVariantGapIssue) {
+      for (const m of group) {
+        m.reviewStatus = 'needs_review';
+        m.matchReason = `inter-variant gap is shorter than timing_config.y (${timingConfig.y}s)`;
       }
     }
   }

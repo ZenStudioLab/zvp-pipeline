@@ -120,7 +120,9 @@ export type EnqueuePipelineJobDep = {
 };
 
 export type MuseScoreExport = {
-  score_id: number;
+  provider: string;
+  provider_item_id: string;
+  source_site: string;
   source_url: string;
   canonical_url: string | null;
   title: string;
@@ -211,8 +213,8 @@ export async function writeCatalog(
   }
 
   // --- Upsert arrangement ---
-  const provider = "musescore";
-  const providerItemId = `${provider}:${input.score_id}`;
+  const provider = input.provider;
+  const providerItemId = input.provider_item_id;
 
   const existingArrangement = await deps.arrangement.findByProviderItem(
     provider,
@@ -298,7 +300,7 @@ export async function writeCatalog(
     const inserted = await deps.pipelineJob.insertPipelineJob({
       sourceKey,
       sourceUrl: input.source_url,
-      sourceSite: "musescore.com",
+      sourceSite: input.source_site,
       rawTitle: input.title,
       sourceItemId: arrangementId,
       inputAssetId: deps.sheetAssetId,

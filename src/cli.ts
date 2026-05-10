@@ -16,12 +16,13 @@ import { matchFilesToRecords } from './importers/time-window-matcher.js';
 import { uploadAsset } from './importers/asset-uploader.js';
 import { writeCatalog } from './importers/catalog-writer.js';
 import { createImportRun, createImportEvent, updateImportRun } from './importers/import-audit.js';
+import { adaptScraperExportRecords } from './importers/provider-adapter.js';
 import { createStorageClientFromEnv, downloadFromStorage } from './lib/storage-client.js';
-import type { ImportExportRecord, TimingConfig } from './importers/types.js';
-import type { MuseScoreExport } from './importers/catalog-writer.js';
+import type { TimingConfig } from './importers/types.js';
+import type { ImportDiagnostic, NormalizedImportVariant, RawScraperRecord } from './importers/provider-adapter.js';
 import type { StorageClient } from './importers/asset-uploader.js';
 import type { ZenDatabase } from '@zen/db';
-import { arrangement, pipelineJob, work } from '@zen/db';
+import { arrangement, pipelineJob, sheetAsset, work } from '@zen/db';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,9 +40,9 @@ type RunCommandOptions = {
 type ImportCommandOptions = {
 	exportFile: string;
 	downloadDir: string;
-	timingX: number;
-	timingY: number;
-	timingZ: number;
+	timingX?: number;
+	timingY?: number;
+	timingZ?: number;
 	limit?: number;
 	dryRun: boolean;
 };
@@ -53,6 +54,7 @@ type ImportStats = {
 	rowsCreated: number;
 	dryRun: boolean;
 	importRunId: string | null;
+	diagnostics?: ImportDiagnostic[];
 };
 
 type PipelineStats = Awaited<ReturnType<Awaited<ReturnType<typeof createPipelineRuntimeRepository>>['getStats']>>;
@@ -79,6 +81,7 @@ type CatalogEntry = {
 
 const COMMENT_MAX_LENGTH = 500;
 const VALID_STATUS_FILTERS = ['pending', 'converting', 'scoring', 'dedup', 'published', 'needs_review', 'rejected', 'failed'] as const;
+const DEFAULT_IMPORT_TIMING: TimingConfig = { x: 8, y: 20, z: 10 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -197,57 +200,29 @@ function formatStats(stats: PipelineStats): string {
 	return lines.join('\n');
 }
 
-/**
- * Map an export variant + record to a MuseScoreExport for writeCatalog.
- */
-function mapVariantToExport(
-	record: { canonical_title: string; canonical_artist?: string },
-	variant: Record<string, unknown>,
-	exportRecords: Array<Record<string, unknown>>,
-): MuseScoreExport {
-	const scoreId = Number(variant.score_id ?? 0);
-	const sourceUrl = String(variant.source_url ?? variant.score_url ?? '');
-	const canonicalUrl = variant.score_url ? String(variant.score_url) : null;
-	const title = record.canonical_title;
-	const artist = record.canonical_artist ?? '';
+function timingValue(value: unknown): number | undefined {
+	if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+		return value;
+	}
+	if (typeof value === 'string') {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+	}
+	return undefined;
+}
 
-	// Check for additional metadata stored in the variant
-	const difficultyLabel = String(variant.difficulty_label ?? '');
-	const difficultyRank = variant.difficulty_rank != null ? Number(variant.difficulty_rank) : null;
+function resolveImportTimingConfig(
+	exportJson: { timing_config?: unknown; records?: RawScraperRecord[] },
+	options: Pick<ImportCommandOptions, 'timingX' | 'timingY' | 'timingZ'>,
+): TimingConfig {
+	const firstRecordTiming = exportJson.records?.find((record) => record.timing_config)?.timing_config;
+	const rawTiming = (exportJson.timing_config ?? firstRecordTiming) as Record<string, unknown> | undefined;
 
 	return {
-		score_id: scoreId,
-		source_url: sourceUrl,
-		canonical_url: canonicalUrl,
-		title,
-		artist,
-		artist_url: variant.artist_url ? String(variant.artist_url) : null,
-		song_url: variant.song_url ? String(variant.song_url) : null,
-		uploader_name: variant.uploader_name ? String(variant.uploader_name) : null,
-		uploader_url: variant.uploader_url ? String(variant.uploader_url) : null,
-		difficulty_label: difficultyLabel,
-		difficulty_rank: difficultyRank,
-		duration_seconds: variant.duration_seconds != null ? Number(variant.duration_seconds) : null,
-		bpm: variant.bpm != null ? Number(variant.bpm) : null,
-		view_count: variant.view_count != null ? Number(variant.view_count) : null,
-		like_count: variant.like_count != null ? Number(variant.like_count) : null,
-		comment_count: variant.comment_count != null ? Number(variant.comment_count) : null,
-		rating_score: variant.rating_score != null ? Number(variant.rating_score) : null,
-		rating_count: variant.rating_count != null ? Number(variant.rating_count) : null,
-		pages: variant.pages ? String(variant.pages) : null,
-		measures: variant.measures ? String(variant.measures) : null,
-		key: variant.key ? String(variant.key) : null,
-		parts: variant.parts ? String(variant.parts) : null,
-		credits: variant.credits ? String(variant.credits) : null,
-		uploaded_at: variant.uploaded_at ? String(variant.uploaded_at) : null,
-		updated_at: variant.updated_at ? String(variant.updated_at) : null,
-		license_label: variant.license_label ? String(variant.license_label) : null,
-		license_url: variant.license_url ? String(variant.license_url) : null,
-		privacy: variant.privacy ? String(variant.privacy) : null,
-		tags: Array.isArray(variant.tags) ? variant.tags.map(String) : null,
-		related_versions: variant.related_versions ?? null,
-		raw_metadata: (variant.raw_metadata as Record<string, unknown>) ?? {},
-		scraped_at: String(variant.scraped_at ?? new Date().toISOString()),
+		x: options.timingX ?? timingValue(rawTiming?.x) ?? DEFAULT_IMPORT_TIMING.x,
+		y: options.timingY ?? timingValue(rawTiming?.y) ?? DEFAULT_IMPORT_TIMING.y,
+		z: options.timingZ ?? timingValue(rawTiming?.z) ?? DEFAULT_IMPORT_TIMING.z,
+		maxMatchingWindowSeconds: timingValue(rawTiming?.maxMatchingWindowSeconds ?? rawTiming?.max_matching_window_seconds),
 	};
 }
 
@@ -404,25 +379,12 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 			// 1. Read and parse export JSON
 			const rawExport = await fs.readFile(options.exportFile, 'utf8');
 			const exportJson = JSON.parse(rawExport) as {
-				records?: Array<Record<string, unknown>>;
+				timing_config?: unknown;
+				records?: RawScraperRecord[];
 			};
 			const exportRecords = exportJson.records ?? [];
-			const records: ImportExportRecord[] = [];
-
-			for (const raw of exportRecords) {
-				const variantsRaw = (raw.variants as Array<Record<string, unknown>>) ?? [];
-				records.push({
-					work_order: Number(raw.work_order ?? 0),
-					canonical_title: String(raw.canonical_title ?? ''),
-					variants: variantsRaw.map((v) => ({
-						difficulty_label: String(v.difficulty_label ?? ''),
-						download_filename: v.download_filename ? String(v.download_filename) : null,
-						download_started_at: v.download_started_at ? String(v.download_started_at) : null,
-						score_id: v.score_id ? String(v.score_id) : undefined,
-						score_url: v.score_url ? String(v.score_url) : undefined,
-					})),
-				});
-			}
+			const adapted = adaptScraperExportRecords(exportRecords);
+			const records = adapted.records;
 
 			const limitedRecords = options.limit
 				? records.slice(0, options.limit)
@@ -432,11 +394,7 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 			const scanResult = await scanDownloadDirectory(options.downloadDir);
 
 			// 3. Run time-window matching
-			const timingConfig: TimingConfig = {
-				x: options.timingX,
-				y: options.timingY,
-				z: options.timingZ,
-			};
+			const timingConfig = resolveImportTimingConfig(exportJson, options);
 			const { matches, unmatchedFiles } = matchFilesToRecords(
 				scanResult.files,
 				limitedRecords,
@@ -462,16 +420,11 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 			let filesUploaded = 0;
 			let rowsCreated = 0;
 
-			// Build a lookup from work_order → raw record for variant-to-export mapping
-			const recordByOrder = new Map<number, Record<string, unknown>>();
-			for (const raw of exportRecords) {
-				recordByOrder.set(Number(raw.work_order ?? 0), raw);
-			}
-
 			const storageClientForUpload: StorageClient = storage;
 
 			for (const match of matches) {
 				if (!options.dryRun) {
+					const normalizedVariant = match.variant as NormalizedImportVariant;
 					// 5a. Upload matched file to storage
 					const uploadResult = await uploadAsset(
 						{ filePath: match.file.absolutePath },
@@ -485,44 +438,18 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 					filesUploaded += uploadResult.reused ? 0 : 1;
 
 					// 5b. Write catalog (work + arrangement + pipeline_job)
-					const rawRecord = recordByOrder.get(match.workOrder) ?? ({} as Record<string, unknown>);
-					const rawVariants = Array.isArray(rawRecord.variants) ? (rawRecord.variants as Array<Record<string, unknown>>) : [];
-					const variantIndex = rawVariants.findIndex(
-						(v) => String(v.difficulty_label) === match.variant.difficulty_label,
-					);
-					const rawVariant: Record<string, unknown> = variantIndex >= 0
-						? rawVariants[variantIndex]
-						: (match.variant as unknown as Record<string, unknown>);
-					const mscoreExport = mapVariantToExport(
-						{
-							canonical_title: match.canonicalTitle,
-							canonical_artist: String(rawRecord.canonical_artist ?? ''),
-						},
-						rawVariant,
-						exportRecords,
-					);
-
-					const catalogResult = await writeCatalog(mscoreExport, {
+					const catalogResult = await writeCatalog(normalizedVariant, {
 						work: createWorkDeps(repository.db),
 						arrangement: createArrangementDeps(repository.db),
 						pipelineJob: createPipelineJobDeps(repository.db),
 						sheetAssetId: uploadResult.assetId,
 					});
+					await updateAssetArrangement(repository.db, uploadResult.assetId, catalogResult.arrangementId);
 					rowsCreated += 1;
 
 					// 5c. Create import_event for audit
-					const arrangementRecord = await findArrangementByProviderItem(
-						repository.db,
-						'musescore',
-						`musescore:${mscoreExport.score_id}`,
-					);
-					const pipelineJobRecord = await findPipelineJobBySourceKey(
-						repository.db,
-						`musescore:${mscoreExport.score_id}`,
-					);
-
 					await createImportEvent(repository.db, importRunId!, {
-						arrangementId: arrangementRecord?.id ?? catalogResult.arrangementId,
+						arrangementId: catalogResult.arrangementId,
 						localFilePath: match.file.absolutePath,
 						fileBirthtime: match.file.birthtime,
 						fileCtime: match.file.ctime,
@@ -541,6 +468,27 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 				}
 			}
 
+			if (!options.dryRun && importRunId) {
+				for (const file of unmatchedFiles) {
+					await createImportEvent(repository.db, importRunId, {
+						arrangementId: null,
+						localFilePath: file.absolutePath,
+						fileBirthtime: file.birthtime,
+						fileCtime: file.ctime,
+						fileMtime: file.mtime,
+						fileName: file.filename,
+						matchMethod: null,
+						matchConfidence: 0,
+						matchReason: {
+							windowConfig: timingConfig as unknown as Record<string, unknown>,
+							reason: 'no matching export variant found within configured window',
+						},
+						confidenceBand: 'low',
+						structuralValidationFailed: true,
+					});
+				}
+			}
+
 			// 6. Finalize import_run (unless dry-run)
 			if (importRunId && !options.dryRun) {
 				await updateImportRun(repository.db, importRunId, 'completed');
@@ -553,6 +501,7 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 				rowsCreated,
 				dryRun: options.dryRun,
 				importRunId,
+				diagnostics: adapted.diagnostics,
 			};
 		},
 
@@ -745,7 +694,7 @@ function createArrangementDeps(db: ZenDatabase) {
 					sourceRatingCount: arrangement.sourceRatingCount,
 				})
 				.from(arrangement)
-				.where(eq(arrangement.providerItemId, providerItemId))
+				.where(and(eq(arrangement.provider, provider), eq(arrangement.providerItemId, providerItemId)))
 				.limit(1);
 			return row as {
 				id: string;
@@ -800,31 +749,15 @@ function createPipelineJobDeps(db: ZenDatabase) {
 	};
 }
 
-// ── DB helpers for import audit ──────────────────────────────────────────────
-
-async function findArrangementByProviderItem(
+async function updateAssetArrangement(
 	db: ZenDatabase,
-	provider: string,
-	providerItemId: string,
-): Promise<{ id: string } | null> {
-	const [row] = await db
-		.select({ id: arrangement.id })
-		.from(arrangement)
-		.where(eq(arrangement.providerItemId, providerItemId))
-		.limit(1);
-	return row ?? null;
-}
-
-async function findPipelineJobBySourceKey(
-	db: ZenDatabase,
-	sourceKey: string,
-): Promise<{ id: string; status: string } | null> {
-	const [row] = await db
-		.select({ id: pipelineJob.id, status: pipelineJob.status })
-		.from(pipelineJob)
-		.where(eq(pipelineJob.sourceKey, sourceKey))
-		.limit(1);
-	return row ?? null;
+	assetId: string,
+	arrangementId: string,
+): Promise<void> {
+	await db
+		.update(sheetAsset)
+		.set({ arrangementId })
+		.where(eq(sheetAsset.id, assetId));
 }
 
 // ── Seed dependencies factory ────────────────────────────────────────────────
@@ -924,9 +857,9 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 		.command('import')
 		.requiredOption('--export-file <path>', 'Path to scraper-export.json from extension')
 		.requiredOption('--download-dir <path>', 'Path to OS download directory with .mid files')
-		.option('--timing-x <seconds>', 'Click-to-download delay in seconds', '8')
-		.option('--timing-y <seconds>', 'Inter-work interval in seconds', '20')
-		.option('--timing-z <seconds>', 'Inter-variant interval in seconds', '10')
+		.option('--timing-x <seconds>', 'Override click-to-download delay in seconds')
+		.option('--timing-y <seconds>', 'Override inter-variant interval in seconds')
+		.option('--timing-z <seconds>', 'Override inter-work interval in seconds')
 		.option('--limit <n>', 'Maximum records to process')
 		.option('--dry-run', 'Run all stages but skip DB writes and uploads', false)
 		.action(async (rawOptions) => {
@@ -941,22 +874,22 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 			const options: ImportCommandOptions = {
 				exportFile: path.resolve(rawOptions.exportFile),
 				downloadDir: path.resolve(rawOptions.downloadDir),
-				timingX: Number(rawOptions.timingX),
-				timingY: Number(rawOptions.timingY),
-				timingZ: Number(rawOptions.timingZ),
+				timingX: rawOptions.timingX !== undefined ? Number(rawOptions.timingX) : undefined,
+				timingY: rawOptions.timingY !== undefined ? Number(rawOptions.timingY) : undefined,
+				timingZ: rawOptions.timingZ !== undefined ? Number(rawOptions.timingZ) : undefined,
 				limit: rawOptions.limit ? Number(rawOptions.limit) : undefined,
 				dryRun: Boolean(rawOptions.dryRun),
 			};
 
-			if (options.timingX <= 0 || Number.isNaN(options.timingX)) {
+			if (options.timingX !== undefined && (options.timingX <= 0 || Number.isNaN(options.timingX))) {
 				throw new Error('--timing-x must be a positive number.');
 			}
 
-			if (options.timingY <= 0 || Number.isNaN(options.timingY)) {
+			if (options.timingY !== undefined && (options.timingY <= 0 || Number.isNaN(options.timingY))) {
 				throw new Error('--timing-y must be a positive number.');
 			}
 
-			if (options.timingZ <= 0 || Number.isNaN(options.timingZ)) {
+			if (options.timingZ !== undefined && (options.timingZ <= 0 || Number.isNaN(options.timingZ))) {
 				throw new Error('--timing-z must be a positive number.');
 			}
 

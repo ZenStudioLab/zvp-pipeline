@@ -28,7 +28,9 @@ function createSampleExport(
   overrides: Partial<MuseScoreExport> = {},
 ): MuseScoreExport {
   return {
-    score_id: 12345,
+    provider: "musescore",
+    provider_item_id: "musescore:12345",
+    source_site: "musescore",
     source_url: "https://musescore.com/user/12345/scores/67890",
     canonical_url: "https://musescore.com/user/12345/scores/67890",
     title: "Interstellar Main Theme",
