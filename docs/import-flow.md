@@ -75,12 +75,23 @@ Optional overrides:
 - `--timing-y <seconds>`
 - `--timing-z <seconds>`
 
+Storage notes:
+
+- `STORAGE_BUCKET` defaults to `midi-files`.
+- The import command uploads with a Supabase service-role key.
+
 ## Outputs
 
 - matched or unmatched import audit rows
 - linked original MIDI assets
 - normalized arrangements and works
 - pending pipeline jobs for downstream processing
+
+## Operator note: public URLs vs service-role access
+
+- The import step uploads and later source-items downloads use the Supabase service-role key, so they do not depend on object RLS policies.
+- The current bucket is public so `sheet_asset.public_url` can store a stable `getPublicUrl()` result for the original MIDI asset.
+- If the bucket is ever made private, the pipeline download path can keep working with the service-role key, but any consumer that relies on `public_url` will need signed URLs or a different delivery path.
 
 ## Gotchas
 
