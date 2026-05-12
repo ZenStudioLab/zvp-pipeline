@@ -34,17 +34,22 @@ node dist/cli.js seed
 ### Import scraped arrangements
 
 ```bash
-node dist/cli.js import \
-  --export-file ../Downloads/midi-scraper/scraper-export.json \
-  --download-dir ../Downloads/midi-scraper
+node dist/cli.js import
 ```
 
 Optional overrides:
 
+- `--export-file <path>`
+- `--download-dir <path>`
 - `--dry-run`
 - `--timing-x <seconds>`
 - `--timing-y <seconds>`
 - `--timing-z <seconds>`
+
+Defaults:
+
+- `--download-dir` → `~/Downloads/midi-scraper`
+- `--export-file` → `scraper-export.json` inside that directory
 
 See [docs/import-flow.md](docs/import-flow.md).
 

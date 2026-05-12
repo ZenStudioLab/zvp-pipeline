@@ -23,6 +23,14 @@ vi.mock("node:fs/promises", () => ({
   stat: async () => ({ size: 1024, isFile: () => true, birthtime: new Date(), ctime: new Date(), mtime: new Date() }),
 }));
 
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return {
+    ...actual,
+    homedir: () => "/mock-home",
+  };
+});
+
 // Mock runtime-repository so no real DB connection is needed
 vi.mock("../../src/lib/runtime-repository.js", () => ({
   createPipelineRuntimeRepository: vi.fn(async () => ({
@@ -148,6 +156,24 @@ describe("import command", () => {
     expect(importSpy).toHaveBeenCalledWith({
       exportFile: "/tmp/test/export.json",
       downloadDir: "/tmp/test/downloads",
+      timingX: undefined,
+      timingY: undefined,
+      timingZ: undefined,
+      limit: undefined,
+      dryRun: true,
+    });
+  });
+
+  it("defaults import paths when export-file and download-dir are omitted", async () => {
+    const deps = createMockImportDeps();
+    const importSpy = vi.spyOn(deps, "importCommand");
+
+    const exitCode = await runCli(["import", "--dry-run"], deps);
+
+    expect(exitCode).toBe(0);
+    expect(importSpy).toHaveBeenCalledWith({
+      exportFile: "/mock-home/Downloads/midi-scraper/scraper-export.json",
+      downloadDir: "/mock-home/Downloads/midi-scraper",
       timingX: undefined,
       timingY: undefined,
       timingZ: undefined,

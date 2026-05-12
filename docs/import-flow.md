@@ -59,15 +59,15 @@ Successful matches can create or update:
 ## Common commands
 
 ```bash
-node dist/cli.js import \
-  --export-file ../Downloads/midi-scraper/scraper-export.json \
-  --download-dir ../Downloads/midi-scraper
+node dist/cli.js import
 
-node dist/cli.js import \
-  --export-file ../Downloads/midi-scraper/scraper-export.json \
-  --download-dir ../Downloads/midi-scraper \
-  --dry-run
+node dist/cli.js import --dry-run
 ```
+
+Default paths:
+
+- `--download-dir` defaults to `~/Downloads/midi-scraper`
+- `--export-file` defaults to `scraper-export.json` inside that directory
 
 Optional overrides:
 

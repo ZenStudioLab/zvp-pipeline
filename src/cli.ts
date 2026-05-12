@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { and, eq } from 'drizzle-orm';
 
 import { loadPipelineEnvFile } from './env.js';
@@ -81,6 +81,8 @@ type CatalogEntry = {
 
 const COMMENT_MAX_LENGTH = 500;
 const VALID_STATUS_FILTERS = ['pending', 'converting', 'scoring', 'dedup', 'published', 'needs_review', 'rejected', 'failed'] as const;
+const DEFAULT_IMPORT_DOWNLOAD_DIR = path.join(homedir(), 'Downloads', 'midi-scraper');
+const DEFAULT_IMPORT_EXPORT_FILE = path.join(DEFAULT_IMPORT_DOWNLOAD_DIR, 'scraper-export.json');
 const DEFAULT_IMPORT_TIMING: TimingConfig = { x: 8, y: 20, z: 10 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -855,25 +857,28 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 
 	program
 		.command('import')
-		.requiredOption('--export-file <path>', 'Path to scraper-export.json from extension')
-		.requiredOption('--download-dir <path>', 'Path to OS download directory with .mid files')
+		.option('--export-file <path>', `Path to scraper-export.json from extension (default: ${DEFAULT_IMPORT_EXPORT_FILE})`)
+		.option('--download-dir <path>', `Path to OS download directory with .mid files (default: ${DEFAULT_IMPORT_DOWNLOAD_DIR})`)
 		.option('--timing-x <seconds>', 'Override click-to-download delay in seconds')
 		.option('--timing-y <seconds>', 'Override inter-variant interval in seconds')
 		.option('--timing-z <seconds>', 'Override inter-work interval in seconds')
 		.option('--limit <n>', 'Maximum records to process')
 		.option('--dry-run', 'Run all stages but skip DB writes and uploads', false)
 		.action(async (rawOptions) => {
-			if (!existsSync(rawOptions.exportFile)) {
-				throw new Error(`Export file not found: ${rawOptions.exportFile}`);
+			const exportFile = path.resolve(rawOptions.exportFile ?? DEFAULT_IMPORT_EXPORT_FILE);
+			const downloadDir = path.resolve(rawOptions.downloadDir ?? DEFAULT_IMPORT_DOWNLOAD_DIR);
+
+			if (!existsSync(exportFile)) {
+				throw new Error(`Export file not found: ${exportFile}`);
 			}
 
-			if (!existsSync(rawOptions.downloadDir)) {
-				throw new Error(`Download directory not found: ${rawOptions.downloadDir}`);
+			if (!existsSync(downloadDir)) {
+				throw new Error(`Download directory not found: ${downloadDir}`);
 			}
 
 			const options: ImportCommandOptions = {
-				exportFile: path.resolve(rawOptions.exportFile),
-				downloadDir: path.resolve(rawOptions.downloadDir),
+				exportFile,
+				downloadDir,
 				timingX: rawOptions.timingX !== undefined ? Number(rawOptions.timingX) : undefined,
 				timingY: rawOptions.timingY !== undefined ? Number(rawOptions.timingY) : undefined,
 				timingZ: rawOptions.timingZ !== undefined ? Number(rawOptions.timingZ) : undefined,
