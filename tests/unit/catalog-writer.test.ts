@@ -144,17 +144,20 @@ describe("writeCatalog", () => {
         sourceKey: "A minor",
         sourceParts: "Piano Solo",
         sourceCredits: "Arranged by piano_fan",
-        sourceUploadedAt: "2024-01-15T10:00:00Z",
-        sourceUpdatedAt: "2024-06-20T14:30:00Z",
+        sourceUploadedAt: expect.any(Date),
+        sourceUpdatedAt: expect.any(Date),
         sourceLicenseLabel: "Creative Commons Attribution",
         sourceLicenseUrl: input.license_url,
         sourcePrivacy: "public",
         sourceTags: ["piano", "soundtrack", "film"],
         sourceRelatedVersions: null,
         rawMetadata: { source: "musescore_api_v3" },
-        scrapedAt: "2024-06-21T08:00:00Z",
+        scrapedAt: expect.any(Date),
       }),
     );
+    expect((insertedArrangements[0].sourceUploadedAt as Date).toISOString()).toBe("2024-01-15T10:00:00.000Z");
+    expect((insertedArrangements[0].sourceUpdatedAt as Date).toISOString()).toBe("2024-06-20T14:30:00.000Z");
+    expect((insertedArrangements[0].scrapedAt as Date).toISOString()).toBe("2024-06-21T08:00:00.000Z");
 
     // Pipeline job enqueued
     expect(jobInsert).toHaveBeenCalledWith(
@@ -281,9 +284,10 @@ describe("writeCatalog", () => {
         sourceRatingScore: 4.8,
         sourceRatingCount: 120,
         rawMetadata: { source: "musescore_api_v3" },
-        scrapedAt: "2024-06-21T08:00:00Z",
+        scrapedAt: expect.any(Date),
       }),
     );
+    expect((arrangementUpdates[0].scrapedAt as Date).toISOString()).toBe("2024-06-21T08:00:00.000Z");
     expect(result.arrangementId).toBe("existing_arr");
     expect(result.arrangementNew).toBe(false);
   });

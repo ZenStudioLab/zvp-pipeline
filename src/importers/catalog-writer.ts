@@ -10,6 +10,24 @@ export function slugify(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
+function toOptionalDate(value: string | null): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toRequiredDate(value: string, fieldName: string): Date {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid timestamp for ${fieldName}: ${value}`);
+  }
+
+  return parsed;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -76,15 +94,15 @@ export type UpsertArrangementDep = {
     sourceKey: string | null;
     sourceParts: string | null;
     sourceCredits: string | null;
-    sourceUploadedAt: string | null;
-    sourceUpdatedAt: string | null;
+    sourceUploadedAt: Date | null;
+    sourceUpdatedAt: Date | null;
     sourceLicenseLabel: string | null;
     sourceLicenseUrl: string | null;
     sourcePrivacy: string | null;
     sourceTags: string[] | null;
     sourceRelatedVersions: unknown;
     rawMetadata: Record<string, unknown>;
-    scrapedAt: string;
+    scrapedAt: Date;
   }) => Promise<{ id: string }>;
   updateArrangement: (
     id: string,
@@ -95,7 +113,7 @@ export type UpsertArrangementDep = {
       sourceRatingScore: number | null;
       sourceRatingCount: number | null;
       rawMetadata: Record<string, unknown>;
-      scrapedAt: string;
+      scrapedAt: Date;
     },
   ) => Promise<void>;
 };
@@ -233,7 +251,7 @@ export async function writeCatalog(
       sourceRatingScore: input.rating_score,
       sourceRatingCount: input.rating_count,
       rawMetadata: input.raw_metadata,
-      scrapedAt: input.scraped_at,
+      scrapedAt: toRequiredDate(input.scraped_at, "scraped_at"),
     });
 
     arrangementId = existingArrangement.id;
@@ -263,15 +281,15 @@ export async function writeCatalog(
       sourceKey: input.key,
       sourceParts: input.parts,
       sourceCredits: input.credits,
-      sourceUploadedAt: input.uploaded_at,
-      sourceUpdatedAt: input.updated_at,
+      sourceUploadedAt: toOptionalDate(input.uploaded_at),
+      sourceUpdatedAt: toOptionalDate(input.updated_at),
       sourceLicenseLabel: input.license_label,
       sourceLicenseUrl: input.license_url,
       sourcePrivacy: input.privacy,
       sourceTags: input.tags,
       sourceRelatedVersions: input.related_versions,
       rawMetadata: input.raw_metadata,
-      scrapedAt: input.scraped_at,
+      scrapedAt: toRequiredDate(input.scraped_at, "scraped_at"),
     });
 
     arrangementId = inserted.id;
