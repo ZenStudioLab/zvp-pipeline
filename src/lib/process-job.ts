@@ -6,6 +6,8 @@ import type {
   FingerprintRecord,
   GenreRecord,
 } from "../stages/types.js";
+import type { DifficultyLevel } from "@zen/midi-to-vp";
+import type { SourceDifficultyLabel } from "../stages/canonical-selector.js";
 import { evaluatePipelineStages } from "./run-stages.js";
 
 type PipelineJobRepository = {
@@ -49,6 +51,7 @@ type PipelineJobRepository = {
   >[1]["promoteCanonicalFamily"];
   updateFingerprint: Parameters<typeof publishSheet>[1]["updateFingerprint"];
   revalidatePaths: Parameters<typeof publishSheet>[1]["revalidatePaths"];
+  updateWorkCanonicalSheet?: (workId: string) => Promise<void>;
 };
 
 type ProcessPipelineInput = {
@@ -60,6 +63,11 @@ type ProcessPipelineInput = {
   youtubeUrl?: string;
   file: Uint8Array | Buffer;
   dryRun: boolean;
+  /** Import provenance — set for imported jobs; omitted for local/non-imported runs. */
+  workId?: string | null;
+  arrangementId?: string | null;
+  sourceDifficultyLabel?: SourceDifficultyLabel | null;
+  conversionLevel?: DifficultyLevel | null;
 };
 
 export async function processPipelineJob(
@@ -181,6 +189,11 @@ export async function processPipelineJob(
       normalizedKey: evaluation.normalized.normalizedKey,
       nextVersionCount: evaluation.dedupDecision.nextVersionCount,
       dryRun: input.dryRun,
+      // Import provenance — undefined for local/non-imported runs; passed through for imported jobs.
+      workId: input.workId,
+      arrangementId: input.arrangementId,
+      sourceDifficultyLabel: input.sourceDifficultyLabel,
+      conversionLevel: input.conversionLevel,
     },
     repository,
   );
@@ -196,6 +209,15 @@ export async function processPipelineJob(
         published.outcome === "rejected" ? "low_quality" : undefined,
     },
   );
+
+  // Refresh canonical sheet pointer when an imported work was successfully published.
+  if (
+    published.outcome !== "rejected" &&
+    input.workId &&
+    published.sheetId
+  ) {
+    await repository.updateWorkCanonicalSheet?.(input.workId);
+  }
 
   return {
     idempotent: false,

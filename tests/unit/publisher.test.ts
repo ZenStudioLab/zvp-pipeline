@@ -359,6 +359,65 @@ describe("publishSheet", () => {
     expect(revalidateCount).toBe(0);
   });
 
+  it("persists import provenance fields on the inserted sheet", async () => {
+    const insertedSheets: Array<Record<string, unknown>> = [];
+
+    await publishSheet(
+      createPublisherInput({
+        workId: "work_abc",
+        arrangementId: "arr_xyz",
+        sourceDifficultyLabel: "Intermediate",
+        conversionLevel: "Adept",
+      }),
+      {
+        insertSheet: async (sheet) => {
+          insertedSheets.push(sheet);
+          return { id: "sheet_imported", slug: String(sheet.slug) };
+        },
+        promoteCanonicalFamily: async () => undefined,
+        updateFingerprint: async () => undefined,
+        revalidatePaths: async () => undefined,
+      },
+    );
+
+    expect(insertedSheets[0]).toEqual(
+      expect.objectContaining({
+        workId: "work_abc",
+        arrangementId: "arr_xyz",
+        sourceDifficultyLabel: "Intermediate",
+        conversionLevel: "Adept",
+      }),
+    );
+  });
+
+  it("persists null provenance fields for non-imported sheets", async () => {
+    const insertedSheets: Array<Record<string, unknown>> = [];
+
+    await publishSheet(
+      createPublisherInput({
+        // provenance fields omitted (non-imported run)
+      }),
+      {
+        insertSheet: async (sheet) => {
+          insertedSheets.push(sheet);
+          return { id: "sheet_local", slug: String(sheet.slug) };
+        },
+        promoteCanonicalFamily: async () => undefined,
+        updateFingerprint: async () => undefined,
+        revalidatePaths: async () => undefined,
+      },
+    );
+
+    expect(insertedSheets[0]).toEqual(
+      expect.objectContaining({
+        workId: null,
+        arrangementId: null,
+        sourceDifficultyLabel: null,
+        conversionLevel: null,
+      }),
+    );
+  });
+
   it("fails fast when required metadata ids are missing", async () => {
     await expect(
       publishSheet(createPublisherInput({ artist: { id: "", slug: "hans-zimmer", name: "Hans Zimmer" } }), {

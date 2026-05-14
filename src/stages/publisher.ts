@@ -1,4 +1,6 @@
 import { PIPELINE_THRESHOLDS } from "../config.js";
+import type { DifficultyLevel } from "@zen/midi-to-vp";
+import type { SourceDifficultyLabel } from "./canonical-selector.js";
 import type { PublisherInput, PublisherResult } from "./types.js";
 
 type PublisherRepository = {
@@ -25,6 +27,10 @@ type PublisherRepository = {
     metadataConfidence: "high" | "medium" | "low";
     isPublished: boolean;
     needsReview: boolean;
+    workId?: string | null;
+    arrangementId?: string | null;
+    sourceDifficultyLabel?: SourceDifficultyLabel | null;
+    conversionLevel?: DifficultyLevel | null;
   }): Promise<{ id: string; slug: string }>;
   updateFingerprint(update: {
     normalizedKey: string;
@@ -140,6 +146,10 @@ export async function publishSheet(
     metadataConfidence: getConfidenceBand(input.confidenceScore),
     isPublished: outcome === "published",
     needsReview: outcome === "needs_review",
+    workId: input.workId ?? null,
+    arrangementId: input.arrangementId ?? null,
+    sourceDifficultyLabel: input.sourceDifficultyLabel ?? null,
+    conversionLevel: input.conversionLevel ?? null,
   });
 
   if (

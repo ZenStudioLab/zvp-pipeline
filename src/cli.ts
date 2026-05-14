@@ -23,6 +23,7 @@ import type { ImportDiagnostic, NormalizedImportVariant, RawScraperRecord } from
 import type { StorageClient } from './importers/asset-uploader.js';
 import type { ZenDatabase } from '@zen/db';
 import { arrangement, pipelineJob, sheetAsset, work } from '@zen/db';
+import type { SourceDifficultyLabel } from './stages/canonical-selector.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -527,6 +528,16 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 
 // ── Source-items run handler ──────────────────────────────────────────────────
 
+/**
+ * Coerce a raw DB string to SourceDifficultyLabel.
+ * Unknown / null values become null so callers can omit unrecognised labels
+ * without risking silent type widening.
+ */
+function asSourceDifficultyLabel(v: string | null): SourceDifficultyLabel | null {
+	if (v === 'Beginner' || v === 'Intermediate' || v === 'Advanced') return v;
+	return null;
+}
+
 async function handleSourceItemsRun(
 	options: RunCommandOptions,
 	repository: Awaited<ReturnType<typeof createPipelineRuntimeRepository>>,
@@ -612,6 +623,11 @@ async function handleSourceItemsRun(
 					tips: [],
 					file: fileBytes,
 					dryRun: false,
+					// Import provenance — resolved from the arrangement row via listJobsWithAssets.
+					workId: job.workId ?? null,
+					arrangementId: job.arrangementId ?? null,
+					sourceDifficultyLabel: asSourceDifficultyLabel(job.sourceDifficultyLabel),
+					conversionLevel: 'Adept',
 				},
 				repository,
 			);

@@ -1,7 +1,9 @@
 import type {
+  DifficultyLevel,
   QualitySignals as MidiQualitySignals,
   ScoringAssessment,
 } from "@zen/midi-to-vp";
+import type { SourceDifficultyLabel } from "./canonical-selector.js";
 
 export type ConfidenceBand = "high" | "medium" | "low";
 
@@ -138,6 +140,11 @@ export type PublisherInput = {
   normalizedKey: string;
   nextVersionCount: number;
   dryRun: boolean;
+  /** Import provenance — set for imported sheets only. */
+  workId?: string | null;
+  arrangementId?: string | null;
+  sourceDifficultyLabel?: SourceDifficultyLabel | null;
+  conversionLevel?: DifficultyLevel | null;
 };
 
 export type PublisherOutcome =

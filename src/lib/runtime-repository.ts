@@ -18,6 +18,12 @@ import type {
   DifficultyRecord,
   GenreRecord,
 } from "../stages/types.js";
+import type { DifficultyLevel } from "@zen/midi-to-vp";
+import {
+  selectWorkCanonicalSheet,
+  type SourceDifficultyLabel,
+  type WorkCanonicalInput,
+} from "../stages/canonical-selector.js";
 
 type PersistedPipelineStatus =
   | "pending"
@@ -390,6 +396,10 @@ export async function createPipelineRuntimeRepository(
     metadataConfidence: "high" | "medium" | "low";
     isPublished: boolean;
     needsReview: boolean;
+    workId?: string | null;
+    arrangementId?: string | null;
+    sourceDifficultyLabel?: SourceDifficultyLabel | null;
+    conversionLevel?: DifficultyLevel | null;
   }): Promise<{ id: string; slug: string }> {
     const [inserted] = await db
       .insert(sheet)
@@ -416,6 +426,10 @@ export async function createPipelineRuntimeRepository(
         metadataConfidence: input.metadataConfidence,
         isPublished: input.isPublished,
         needsReview: input.needsReview,
+        workId: input.workId ?? null,
+        arrangementId: input.arrangementId ?? null,
+        sourceDifficultyLabel: input.sourceDifficultyLabel ?? null,
+        conversionLevel: input.conversionLevel ?? null,
       })
       .returning({ id: sheet.id, slug: sheet.slug });
 
@@ -897,6 +911,8 @@ export async function createPipelineRuntimeRepository(
       sourceSite: string | null;
       rawTitle: string | null;
       arrangementId: string | null;
+      workId: string | null;
+      sourceDifficultyLabel: string | null;
       bucket: string;
       objectPath: string;
       storageProvider: string | null;
@@ -915,17 +931,153 @@ export async function createPipelineRuntimeRepository(
         sourceSite: pipelineJob.sourceSite,
         rawTitle: pipelineJob.rawTitle,
         arrangementId: pipelineJob.sourceItemId,
+        workId: arrangement.workId,
+        sourceDifficultyLabel: arrangement.sourceDifficultyLabel,
         bucket: sheetAsset.bucket,
         objectPath: sheetAsset.objectPath,
         storageProvider: sheetAsset.storageProvider,
       })
       .from(pipelineJob)
       .innerJoin(sheetAsset, eq(pipelineJob.inputAssetId, sheetAsset.id))
+      .leftJoin(arrangement, eq(arrangement.id, pipelineJob.sourceItemId))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(pipelineJob.createdAt))
       .limit(filters.limit);
 
     return rows;
+  }
+
+  /**
+   * Recompute and persist the work-level canonical imported sheet reference.
+   *
+   * Queries all arrangement-linked sheets for the work that have full provenance
+   * (arrangement_id, conversion_level, and source_difficulty_label all non-null),
+   * runs selectWorkCanonicalSheet, and updates work.canonical_sheet_id with the
+   * winning sheet id (or clears it if no eligible canonical sheet exists).
+   *
+   * Must be called after any imported sheet create/update/delete for the work.
+   */
+  async function updateWorkCanonicalSheet(workId: string): Promise<void> {
+    // Fetch all arrangement-linked sheets with ranking metadata from arrangement.
+    const rows = await db
+      .select({
+        id: sheet.id,
+        arrangementId: sheet.arrangementId,
+        conversionLevel: sheet.conversionLevel,
+        sourceDifficultyLabel: sheet.sourceDifficultyLabel,
+        sourceViewCount: arrangement.sourceViewCount,
+        sourceRatingCount: arrangement.sourceRatingCount,
+        sourceRatingScore: arrangement.sourceRatingScore,
+        arrangementCreatedAt: arrangement.createdAt,
+      })
+      .from(sheet)
+      .innerJoin(arrangement, eq(arrangement.id, sheet.arrangementId))
+      .where(
+        and(
+          eq(sheet.workId, workId),
+          sql`${sheet.arrangementId} IS NOT NULL`,
+          sql`${sheet.conversionLevel} IS NOT NULL`,
+          sql`${sheet.sourceDifficultyLabel} IS NOT NULL`,
+        ),
+      );
+
+    // Accumulate per-arrangement: collect available conversion levels and
+    // a map of conversionLevel → sheetId so we can resolve the winner later.
+    type Accumulator = WorkCanonicalInput & {
+      sheetsByLevel: Map<string, string>;
+    };
+
+    const byArrangement = new Map<string, Accumulator>();
+
+    for (const row of rows) {
+      if (!row.arrangementId || !row.conversionLevel) continue;
+      const label = row.sourceDifficultyLabel;
+      if (
+        label !== "Beginner" &&
+        label !== "Intermediate" &&
+        label !== "Advanced"
+      )
+        continue;
+
+      const existing = byArrangement.get(row.arrangementId);
+      if (existing) {
+        (existing.availableConversionLevels as DifficultyLevel[]).push(
+          row.conversionLevel as DifficultyLevel,
+        );
+        existing.sheetsByLevel.set(row.conversionLevel, row.id);
+      } else {
+        byArrangement.set(row.arrangementId, {
+          arrangementId: row.arrangementId,
+          sourceDifficultyLabel: label as SourceDifficultyLabel,
+          sourceViewCount: row.sourceViewCount,
+          sourceRatingCount: row.sourceRatingCount,
+          sourceRatingScore: row.sourceRatingScore,
+          createdAt: row.arrangementCreatedAt,
+          availableConversionLevels: [row.conversionLevel as DifficultyLevel],
+          sheetsByLevel: new Map([[row.conversionLevel, row.id]]),
+        });
+      }
+    }
+
+    const inputs: WorkCanonicalInput[] = [...byArrangement.values()];
+    const winner = selectWorkCanonicalSheet(inputs);
+
+    // No eligible canonical sheet — clear the persisted reference.
+    if (!winner) {
+      console.log(
+        JSON.stringify({
+          event: "canonical_sheet_cleared",
+          workId,
+          candidateCount: inputs.length,
+          reason: "no_eligible_canonical_sheet",
+        }),
+      );
+      await db
+        .update(work)
+        .set({ canonicalSheetId: null, updatedAt: new Date() })
+        .where(eq(work.id, workId));
+      return;
+    }
+
+    const winnerEntry = byArrangement.get(winner.arrangementId);
+    const winnerSheetId = winnerEntry?.sheetsByLevel.get(winner.conversionLevel);
+    if (!winnerSheetId) {
+      // This branch means selectWorkCanonicalSheet returned a (arrangementId,
+      // conversionLevel) pair that is not present in the in-memory accumulator
+      // built from the same query.  That is only possible if the sheet rows
+      // changed between our SELECT and this resolution step (concurrent write),
+      // or if the selector has a bug.  Rather than silently leaving a stale
+      // canonical_sheet_id, surface this as an explicit error so it is visible
+      // in logs and can be retried or investigated.
+      throw new Error(
+        `updateWorkCanonicalSheet: winner (arrangementId=${winner.arrangementId}, ` +
+          `conversionLevel=${winner.conversionLevel}) not found in accumulator ` +
+          `for workId=${workId}. Possible concurrent-write race or selector inconsistency.`,
+      );
+    }
+
+    // Infer which resolution branch was used:
+    //   Phase 1 — an Adept variant existed; winner.conversionLevel is "Adept".
+    //   Phase 2 — no Adept existed; conversionLevel is an arrangement-level fallback.
+    const branch =
+      winner.conversionLevel === "Adept" ? "phase1_adept" : "phase2_fallback";
+
+    console.log(
+      JSON.stringify({
+        event: "canonical_sheet_selected",
+        workId,
+        branch,
+        arrangementId: winner.arrangementId,
+        conversionLevel: winner.conversionLevel,
+        candidateCount: inputs.length,
+        winnerSheetId,
+      }),
+    );
+
+    await db
+      .update(work)
+      .set({ canonicalSheetId: winnerSheetId, updatedAt: new Date() })
+      .where(eq(work.id, workId));
   }
 
   async function close(): Promise<void> {
@@ -963,6 +1115,7 @@ export async function createPipelineRuntimeRepository(
     findAssetBySha256,
     insertAsset: insertAssetRecord,
     listJobsWithAssets,
+    updateWorkCanonicalSheet,
     close,
   };
 }

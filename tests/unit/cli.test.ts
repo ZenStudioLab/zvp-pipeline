@@ -23,6 +23,7 @@ vi.mock("../../src/lib/runtime-repository.js", () => ({
     findAssetBySha256: vi.fn(async () => null),
     insertAsset: vi.fn(async () => ({ id: "asset_mock" })),
     listJobsWithAssets: vi.fn(async () => []),
+    updateWorkCanonicalSheet: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
   })),
 }));
@@ -381,6 +382,7 @@ describe("runCli", () => {
           findAssetBySha256: vi.fn(async () => null),
           insertAsset: vi.fn(async () => ({ id: "asset_mock" })),
           listJobsWithAssets: vi.fn(async () => []),
+          updateWorkCanonicalSheet: vi.fn(async () => undefined),
           close: vi.fn(async () => undefined),
         };
       },
