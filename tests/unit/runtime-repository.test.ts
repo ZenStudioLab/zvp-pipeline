@@ -358,4 +358,375 @@ describe("createPipelineRuntimeRepository", () => {
       ]),
     ).resolves.toEqual([existingArtist, existingArtist]);
   });
+
+  it("persists new lifecycle fields while mirroring the legacy status", async () => {
+    const insertedJobs: Array<Record<string, unknown>> = [];
+
+    vi.resetModules();
+    vi.doUnmock("@zen/db");
+
+    let selectCallCount = 0;
+    const db = {
+      select: vi.fn(() => {
+        selectCallCount += 1;
+
+        if (selectCallCount === 1) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededGenreRows),
+            })),
+          };
+        }
+
+        if (selectCallCount === 2) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededDifficultyRows),
+            })),
+          };
+        }
+
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(async () => []),
+            })),
+          })),
+        };
+      }),
+      insert: vi.fn(() => ({
+        values: vi.fn((input) => {
+          insertedJobs.push(input as Record<string, unknown>);
+
+          return {
+            returning: vi.fn(async () => [{ id: "pipeline_job_1" }]),
+          };
+        }),
+      })),
+    } as any;
+
+    const { createPipelineRuntimeRepository } =
+      await import("../../src/lib/runtime-repository.js");
+    const repository = await createPipelineRuntimeRepository({ db });
+
+    await repository.saveJobStatus({
+      sourceUrl: "https://example.com/song.mid",
+      sourceSite: "freemidi",
+      rawTitle: "Song",
+      status: "converting",
+      normalizedTitle: "Song",
+      normalizedArtist: "Artist",
+      metadataConfidence: "high",
+      qualityScore: 0.87,
+      rubricVersion: "v2",
+      qualityReasons: ["LOW_IN_RANGE_RATIO"],
+      stateContext: { legacyStatus: "converting" },
+      phaseContext: { legacyStatus: "converting" },
+    } as never);
+
+    expect(insertedJobs[0]).toEqual(
+      expect.objectContaining({
+        status: "converting",
+        state: "running",
+        phase: "convert",
+        stateReason: "legacy_converting",
+        stateStartedAt: expect.any(Date),
+        phaseStartedAt: expect.any(Date),
+        stateContext: expect.objectContaining({ legacyStatus: "converting" }),
+        phaseContext: expect.objectContaining({ legacyStatus: "converting" }),
+      }),
+    );
+  });
+
+  it("normalizes legacy intermediate rows to a running stranded lifecycle", async () => {
+    vi.resetModules();
+    vi.doUnmock("@zen/db");
+
+    let selectCallCount = 0;
+    const db = {
+      select: vi.fn(() => {
+        selectCallCount += 1;
+
+        if (selectCallCount === 1) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededGenreRows),
+            })),
+          };
+        }
+
+        if (selectCallCount === 2) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededDifficultyRows),
+            })),
+          };
+        }
+
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(async () => [
+                {
+                  id: "job_legacy",
+                  status: "dedup",
+                  state: null,
+                  phase: null,
+                  sourceUrl: "https://example.com/song.mid",
+                  outputSheetId: null,
+                  stateStartedAt: null,
+                  phaseStartedAt: null,
+                  stateReason: null,
+                  stateContext: null,
+                  phaseContext: null,
+                  errorContext: null,
+                  processedAt: null,
+                },
+              ]),
+            })),
+          })),
+        };
+      }),
+    } as any;
+
+    const { createPipelineRuntimeRepository } =
+      await import("../../src/lib/runtime-repository.js");
+    const repository = await createPipelineRuntimeRepository({ db });
+
+    await expect(repository.getJobBySourceUrl("https://example.com/song.mid")).resolves.toEqual(
+      expect.objectContaining({
+        status: "dedup",
+        state: "running",
+        phase: "dedup",
+      }),
+    );
+  });
+
+  it("does not select a legacy dedup row that still looks queued for source-items", async () => {
+    vi.resetModules();
+    vi.doUnmock("@zen/db");
+
+    const queryResult = {
+      innerJoin: vi.fn(() => queryResult),
+      leftJoin: vi.fn(() => queryResult),
+      where: vi.fn(() => queryResult),
+      orderBy: vi.fn(() => queryResult),
+      limit: vi.fn(async () => [
+        {
+          sourceUrl: "https://example.com/song.mid",
+          sourceSite: "freemidi",
+          rawTitle: "Song",
+          status: "dedup",
+          state: "queued",
+          phase: null,
+          processedAt: null,
+          arrangementId: "arr_legacy",
+          workId: "work_1",
+          sourceDifficultyLabel: "Intermediate",
+          bucket: "midi-files",
+          objectPath: "song.mid",
+          storageProvider: "supabase",
+        },
+      ]),
+    } as any;
+
+    let selectCallCount = 0;
+    const db = {
+      select: vi.fn(() => {
+        selectCallCount += 1;
+
+        if (selectCallCount === 1) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededGenreRows),
+            })),
+          };
+        }
+
+        if (selectCallCount === 2) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededDifficultyRows),
+            })),
+          };
+        }
+
+        return {
+          from: vi.fn(() => queryResult),
+        };
+      }),
+    } as any;
+
+    const { createPipelineRuntimeRepository } =
+      await import("../../src/lib/runtime-repository.js");
+    const repository = await createPipelineRuntimeRepository({ db });
+
+    await expect(
+      repository.listJobsWithAssets({ source: "freemidi", status: "pending", limit: 10 }),
+    ).resolves.toEqual([]);
+  });
+
+  it("reports queued, running, failed, rejected, published, and stranded inventory", async () => {
+    vi.resetModules();
+    vi.doUnmock("@zen/db");
+
+    let selectCallCount = 0;
+    const db = {
+      select: vi.fn(() => {
+        selectCallCount += 1;
+
+        if (selectCallCount === 1) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededGenreRows),
+            })),
+          };
+        }
+
+        if (selectCallCount === 2) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededDifficultyRows),
+            })),
+          };
+        }
+
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(async () => [
+              {
+                sourceUrl: "https://example.com/queued.mid",
+                state: "queued",
+                status: "pending",
+                phase: null,
+                processedAt: null,
+                phaseStartedAt: null,
+              },
+              {
+                sourceUrl: "https://example.com/running.mid",
+                state: "running",
+                status: "converting",
+                phase: "convert",
+                processedAt: null,
+                phaseStartedAt: new Date("2026-01-01T00:00:00.000Z"),
+              },
+              {
+                sourceUrl: "https://example.com/failed.mid",
+                state: "failed",
+                status: "failed",
+                phase: null,
+                processedAt: new Date(),
+                phaseStartedAt: null,
+              },
+              {
+                sourceUrl: "https://example.com/rejected.mid",
+                state: "rejected",
+                status: "rejected",
+                phase: null,
+                processedAt: new Date(),
+                phaseStartedAt: null,
+              },
+              {
+                sourceUrl: "https://example.com/published.mid",
+                state: "published",
+                status: "published",
+                phase: "publish",
+                processedAt: new Date(),
+                phaseStartedAt: null,
+              },
+            ]),
+          })),
+        };
+      }),
+    } as any;
+
+    const { createPipelineRuntimeRepository } = await import("../../src/lib/runtime-repository.js");
+    const repository = await createPipelineRuntimeRepository({ db });
+
+    const inventory = await repository.getSourceItemInventory({ source: "freemidi" });
+
+    expect(inventory).toEqual(
+      expect.objectContaining({
+        queued: 1,
+        running: 0,
+        failed: 1,
+        rejected: 1,
+        published: 1,
+        stranded: 1,
+      }),
+    );
+    expect(inventory.warnings).toHaveLength(1);
+  });
+
+  it("preserves phase_started_at when saving the same running phase twice", async () => {
+    vi.resetModules();
+    vi.doUnmock("@zen/db");
+
+    const existingPhaseStartedAt = new Date("2026-01-01T00:00:00.000Z");
+    let updatePayload: Record<string, unknown> | null = null;
+    let selectCallCount = 0;
+    const db = {
+      select: vi.fn(() => {
+        selectCallCount += 1;
+
+        if (selectCallCount === 1) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededGenreRows),
+            })),
+          };
+        }
+
+        if (selectCallCount === 2) {
+          return {
+            from: vi.fn(() => ({
+              orderBy: vi.fn(async () => seededDifficultyRows),
+            })),
+          };
+        }
+
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(async () => [
+                {
+                  id: "job_1",
+                  attemptCount: 1,
+                  state: "running",
+                  phase: "convert",
+                  stateStartedAt: new Date("2026-01-01T00:00:00.000Z"),
+                  phaseStartedAt: existingPhaseStartedAt,
+                },
+              ]),
+            })),
+          })),
+        };
+      }),
+      update: vi.fn(() => ({
+        set: vi.fn((payload) => {
+          updatePayload = payload as Record<string, unknown>;
+          return {
+            where: vi.fn(async () => undefined),
+          };
+        }),
+      })),
+    } as any;
+
+    const { createPipelineRuntimeRepository } = await import("../../src/lib/runtime-repository.js");
+    const repository = await createPipelineRuntimeRepository({ db });
+
+    await repository.saveJobStatus({
+      sourceUrl: "https://example.com/song.mid",
+      status: "scoring",
+      state: "running",
+      phase: "convert",
+      phaseContext: { staleCheck: true },
+    } as never);
+
+    expect(updatePayload).toEqual(
+      expect.objectContaining({
+        phaseStartedAt: existingPhaseStartedAt,
+      }),
+    );
+  });
 });

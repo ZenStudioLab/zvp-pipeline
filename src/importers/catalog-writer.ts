@@ -121,7 +121,7 @@ export type UpsertArrangementDep = {
 export type EnqueuePipelineJobDep = {
   findBySourceKey: (
     sourceKey: string,
-  ) => Promise<{ id: string; status: string } | null>;
+  ) => Promise<{ id: string; status: string; state?: string | null; phase?: string | null } | null>;
   insertPipelineJob: (input: {
     sourceKey: string;
     sourceUrl: string;
@@ -130,10 +130,19 @@ export type EnqueuePipelineJobDep = {
     sourceItemId: string;
     inputAssetId: string;
     status: "pending";
+    state: "queued";
+    phase: null;
   }) => Promise<{ id: string }>;
   updatePipelineJob: (
     id: string,
-    input: { status: string; lastError: string | null },
+    input: {
+      status: string;
+      state?: string;
+      phase?: string | null;
+      lastError: string | null;
+      stateReason?: string;
+      stateContext?: Record<string, unknown> | null;
+    },
   ) => Promise<void>;
 };
 
@@ -311,6 +320,8 @@ export async function writeCatalog(
     if (existingJob.status === "failed") {
       await deps.pipelineJob.updatePipelineJob(existingJob.id, {
         status: "pending",
+        state: "queued",
+        phase: null,
         lastError: null,
       });
     }
@@ -323,6 +334,8 @@ export async function writeCatalog(
       sourceItemId: arrangementId,
       inputAssetId: deps.sheetAssetId,
       status: "pending",
+      state: "queued",
+      phase: null,
     });
 
     pipelineJobId = inserted.id;

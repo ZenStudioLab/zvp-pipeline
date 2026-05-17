@@ -19,7 +19,7 @@
                work + arrangement + pipeline_job + import audit
                                │
                                ▼
-                        run --source-items
+                        run --source-items / retry / requeue / force-generate
                                │
          normalize → convert → score → dedup → enrich → publish
                                │
@@ -66,12 +66,16 @@ Responsibilities:
 - enrich metadata
 - publish accepted results
 - optionally trigger AI enrichment
+- report lifecycle inventory before selection so queued, running, failed, rejected, published, and stranded/stale rows stay visible to operators
+- expose `run --retry-failed` and `run --requeue-stranded` as explicit recovery paths
+- allow `run --source-items --force-generate` as an explicit override path that does not change source-job lifecycle state
 
 ## Important invariants
 
 - Provider item identity is provider-qualified and string-based, e.g. `musescore:4383881`.
 - `scraper-export.json` is the active import contract for the importer path.
 - `download_filename` is advisory only; timestamp matching is canonical.
+- `pipeline_job.state` is the durable lifecycle contract; `pipeline_job.phase` is transient execution breadcrumbing.
 - Timing semantics are:
   - `x` click-to-download delay
   - `y` inter-variant delay

@@ -69,20 +69,22 @@ class InMemoryPipelineRepository {
 
   private readonly jobs = new Map<
     string,
-    { status: string; sheetId: string | null }
+    { status: string; state: string; phase: string | null; sheetId: string | null }
   >();
   private readonly artists = new Map<string, ArtistRecord>();
   private readonly fingerprints = new Map<string, FingerprintRecord>();
 
   async getJobBySourceUrl(
     sourceUrl: string,
-  ): Promise<{ status: string; sheetId: string | null } | null> {
+  ): Promise<{ status: string; state: string; phase: string | null; sheetId: string | null } | null> {
     return this.jobs.get(sourceUrl) ?? null;
   }
 
   async saveJobStatus(event: {
     sourceUrl: string;
     status: string;
+    state?: string;
+    phase?: string | null;
     sheetId?: string | null;
     qualityScore?: number;
     rubricVersion?: string;
@@ -93,6 +95,8 @@ class InMemoryPipelineRepository {
     this.jobStatuses.push(event);
     this.jobs.set(event.sourceUrl, {
       status: event.status,
+      state: event.state ?? "queued",
+      phase: event.phase ?? null,
       sheetId: event.sheetId ?? null,
     });
   }
@@ -349,6 +353,8 @@ describe("processPipelineJob", () => {
     expect(repository.insertAttempts).toBe(1);
     expect(await repository.getJobBySourceUrl(input.sourceUrl)).toEqual({
       status: "published",
+      state: "published",
+      phase: "publish",
       sheetId: "sheet_1",
     });
 

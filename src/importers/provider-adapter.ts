@@ -131,6 +131,15 @@ function difficultyRank(value: unknown): number | null {
   return null;
 }
 
+function sourceDifficultyLabel(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const label = value.toLowerCase().trim();
+  if (['beginner', 'easy', 'beginning'].includes(label)) return 'Beginner';
+  if (['intermediate', 'medium'].includes(label)) return 'Intermediate';
+  if (['advanced', 'hard', 'expert', 'very advanced'].includes(label)) return 'Advanced';
+  return value.trim();
+}
+
 function stringArrayOrNull(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   return value.map(String);
@@ -244,7 +253,7 @@ export const museScoreProviderAdapter: ProviderAdapter = {
     delete rawRecord.variants;
 
     return {
-      difficulty_label: stringValue(variant.difficulty_label),
+      difficulty_label: sourceDifficultyLabel(variant.difficulty_label),
       download_filename: stringOrNull(variant.download_filename),
       download_started_at: downloadStartedAt,
       score_id: identity.providerItemId,

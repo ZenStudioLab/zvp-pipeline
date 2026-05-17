@@ -16,7 +16,7 @@
 ## Flow
 
 - **Import flow**: `scraper-export.json` + local `.mid` files → normalize provider records → timestamp match → upload/reuse asset → upsert work/arrangement/pipeline job → record import audit
-- **Run flow**: `run` / `run --source-items` → evaluate stages → publish, queue review, or reject
+- **Run flow**: `run` / `run --source-items` → inventory queued/running/failed/rejected/published jobs, warn on stranded/stale rows, evaluate stages, then publish, queue review, reject, retry, requeue, or force-generate; lifecycle uses durable `state` plus transient `phase`
 - **Async flow**: worker consumes `pipeline.process` jobs and optional AI enrichment follow-up jobs
 
 ## Integration

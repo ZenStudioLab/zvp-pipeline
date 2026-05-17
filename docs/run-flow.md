@@ -2,14 +2,17 @@
 
 ## Purpose
 
-The `run` flow processes source MIDI inputs through conversion and publishing logic.
+The `run` flow processes source MIDI inputs through conversion and publishing logic, and reports lifecycle inventory before it selects work.
 
 ## Entry modes
 
 | Mode | Input |
 | --- | --- |
 | `run` | catalog entries or a local MIDI file |
-| `run --source-items` | pending `pipeline_job` rows backed by stored assets |
+| `run --source-items` | queued `pipeline_job` rows backed by stored assets; prints inventory first and warns on stranded/stale rows |
+| `run --source-items --force-generate --arrangement-id <id> --reason "..." [--publish]` | forced generation for an imported arrangement; defaults to review-first |
+| `run --retry-failed` | requeue failed jobs for another processing attempt |
+| `run --requeue-stranded` | requeue stranded jobs that need explicit operator action |
 
 ## Stage sequence
 
@@ -50,6 +53,10 @@ Useful flags:
 - `--concurrency <n>`
 - `--status <status>`
 - `--skip-revalidation`
+- `--force-generate`
+- `--arrangement-id <id>`
+- `--reason <text>`
+- `--publish`
 
 ## Quality model
 
@@ -60,7 +67,12 @@ See `src/config.ts` for the current thresholds.
 ## Gotchas
 
 - `--dry-run` executes logic but skips DB writes.
-- `--source-items` uses stored assets and existing pipeline jobs, not the scraper export.
+- `--source-items` uses stored assets and existing pipeline jobs, not the scraper export; it reports queued/running/failed/rejected/published inventory before selection.
+- `--source-items` warns when it finds stranded or stale jobs that need a retry/requeue command.
+- `--retry-failed` is the operator path for failed jobs.
+- `--requeue-stranded` is the operator path for stranded jobs.
+- `--force-generate` bypasses the normal quality gate, requires a reason, and defaults to review-first unless `--publish` is explicit.
+- `pipeline_job.state` is the durable lifecycle; `pipeline_job.phase` is transient execution progress.
 - ISR revalidation depends on `SITE_URL` and `REVALIDATION_SECRET`.
 
 ## Canonical sheet model
@@ -80,4 +92,3 @@ The canonical work-level sheet defaults to **`Intermediate + Adept`**. When that
 `updateWorkCanonicalSheet(workId)` runs after every sheet insert/update/delete and persists `work.canonical_sheet_id`. It emits a structured JSON log event (`canonical_sheet_selected` or `canonical_sheet_cleared`) that includes the resolution branch, arrangement, conversion level, and candidate count.
 
 See `pipeline/docs/canonical-mapping.md` for the full algorithm reference.
-

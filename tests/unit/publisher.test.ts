@@ -390,6 +390,115 @@ describe("publishSheet", () => {
     );
   });
 
+  it("uses provenance-aware slugs for imported source-item variants", async () => {
+    const insertedSheets: Array<Record<string, unknown>> = [];
+    const revalidatedPaths: string[][] = [];
+
+    await publishSheet(
+      createPublisherInput({
+        slug: "golden-hour-jvke-updated-ver-unknown-artist",
+        sourceUrl: "https://musescore.com/user/1/scores/8772048",
+        workId: "work_golden_hour",
+        arrangementId: "arr_beginner",
+        sourceDifficultyLabel: "Beginner",
+        conversionLevel: "Adept",
+      }),
+      {
+        insertSheet: async (sheet) => {
+          insertedSheets.push(sheet);
+          return { id: "sheet_imported", slug: String(sheet.slug) };
+        },
+        promoteCanonicalFamily: async () => undefined,
+        updateFingerprint: async () => undefined,
+        revalidatePaths: async (paths) => {
+          revalidatedPaths.push(paths);
+        },
+      },
+    );
+
+    expect(insertedSheets[0]).toEqual(
+      expect.objectContaining({
+        slug: "golden-hour-jvke-updated-ver-unknown-artist-beginner-adept-8772048",
+      }),
+    );
+    expect(revalidatedPaths[0]).toContain(
+      "/sheet/golden-hour-jvke-updated-ver-unknown-artist-beginner-adept-8772048",
+    );
+  });
+
+  it("keeps same-title imported source-item variant slugs unique", async () => {
+    const insertedSheets: Array<Record<string, unknown>> = [];
+
+    const repository = {
+      insertSheet: async (sheet: Record<string, unknown>) => {
+        insertedSheets.push(sheet);
+        return { id: `sheet_${insertedSheets.length}`, slug: String(sheet.slug) };
+      },
+      promoteCanonicalFamily: async () => undefined,
+      updateFingerprint: async () => undefined,
+      revalidatePaths: async () => undefined,
+    };
+
+    for (const variant of [
+      { sourceDifficultyLabel: "Beginner", scoreId: "8772048" },
+      { sourceDifficultyLabel: "Intermediate", scoreId: "8775498" },
+      { sourceDifficultyLabel: "Advanced", scoreId: "8668713" },
+    ] as const) {
+      await publishSheet(
+        createPublisherInput({
+          slug: "golden-hour-jvke-updated-ver-unknown-artist",
+          sourceUrl: `https://musescore.com/user/1/scores/${variant.scoreId}`,
+          workId: "work_golden_hour",
+          arrangementId: `arr_${variant.sourceDifficultyLabel.toLowerCase()}`,
+          sourceDifficultyLabel: variant.sourceDifficultyLabel,
+          conversionLevel: "Adept",
+        }),
+        repository,
+      );
+    }
+
+    const slugs = insertedSheets.map((sheet) => sheet["slug"]);
+    expect(new Set(slugs).size).toBe(3);
+    expect(slugs).toEqual([
+      "golden-hour-jvke-updated-ver-unknown-artist-beginner-adept-8772048",
+      "golden-hour-jvke-updated-ver-unknown-artist-intermediate-adept-8775498",
+      "golden-hour-jvke-updated-ver-unknown-artist-advanced-adept-8668713",
+    ]);
+  });
+
+  it("stores forced generation metadata and defaults to review-first", async () => {
+    const insertedSheets: Array<Record<string, unknown>> = [];
+
+    await publishSheet(
+      createPublisherInput({
+        generationMode: "forced",
+        forcedAt: new Date("2026-02-01T12:00:00.000Z"),
+        forceReason: "operator override for known-good MIDI",
+        forceContext: { arrangementId: "arr_123", sourceUrl: "https://example.com/song.mid" },
+      } as never),
+      {
+        insertSheet: async (sheet) => {
+          insertedSheets.push(sheet);
+          return { id: "sheet_forced", slug: String(sheet.slug) };
+        },
+        promoteCanonicalFamily: async () => undefined,
+        updateFingerprint: async () => undefined,
+        revalidatePaths: async () => undefined,
+      },
+    );
+
+    expect(insertedSheets[0]).toEqual(
+      expect.objectContaining({
+        isPublished: false,
+        needsReview: true,
+        generationMode: "forced",
+        forcedAt: new Date("2026-02-01T12:00:00.000Z"),
+        forceReason: "operator override for known-good MIDI",
+        forceContext: expect.objectContaining({ arrangementId: "arr_123" }),
+      }),
+    );
+  });
+
   it("persists null provenance fields for non-imported sheets", async () => {
     const insertedSheets: Array<Record<string, unknown>> = [];
 

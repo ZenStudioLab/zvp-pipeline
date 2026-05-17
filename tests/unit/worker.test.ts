@@ -217,7 +217,11 @@ describe("registerPipelineWorkers", () => {
       sourceSite: "freemidi",
       rawTitle: "Failure Case",
       status: "failed",
+      state: "failed",
+      phase: null,
       lastError: "revalidation failed",
+      errorReason: "unexpected_exception",
+      errorContext: expect.objectContaining({ message: "revalidation failed" }),
     });
   });
 });

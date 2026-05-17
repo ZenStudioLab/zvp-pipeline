@@ -292,4 +292,50 @@ describe("run --source-items", () => {
     expect(parsed.sourceItemCount).toBe(1);
     expect(parsed.entries).toHaveLength(1);
   });
+
+  it("forwards force-generation options to the run command", async () => {
+    const deps = createMockImportDeps();
+    const runSpy = vi.spyOn(deps, "runCommand");
+
+    const exitCode = await runCli(
+      [
+        "run",
+        "--source-items",
+        "--force-generate",
+        "--arrangement-id=arr_123",
+        "--reason=operator override",
+      ],
+      deps,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(runSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceItems: true,
+        forceGenerate: true,
+        arrangementId: "arr_123",
+        reason: "operator override",
+        publish: false,
+      }),
+    );
+  });
+
+  it("rejects blank force reasons", async () => {
+    const deps = createMockImportDeps();
+    const stderr = deps.stderr as ReturnType<typeof vi.fn>;
+
+    const exitCode = await runCli(
+      [
+        "run",
+        "--source-items",
+        "--force-generate",
+        "--arrangement-id=arr_123",
+        "--reason=   ",
+      ],
+      deps,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining("--reason must be a non-empty string"));
+  });
 });

@@ -1,0 +1,404 @@
+{
+  "exported_at": "2026-05-15T12:50:33.966Z",
+  "timing_config": {
+    "x": 3,
+    "y": 10,
+    "z": 15
+  },
+  "records": [
+    {
+      "work_order": 1,
+      "canonical_title": "Golden Hour – JVKE (Updated Ver.)",
+      "artist_name": "JVKE",
+      "artist_url": "https://musescore.com/artist/jvke-338165",
+      "song_url": "https://musescore.com/song/golden_hour-2979506",
+      "variants": [
+        {
+          "difficulty_label": "advanced",
+          "score_id": "musescore:8668713",
+          "score_url": "https://musescore.com/user/39385785/scores/8668713",
+          "canonical_url": "https://musescore.com/user/39385785/scores/8668713",
+          "download_filename": "8668713__8668713__piano__advanced.mid",
+          "download_started_at": "2026-05-15T12:49:04.450Z",
+          "download_url": "https://musescore.com/score/download/index?score_id=8668713&type=mid&h=13517763568352712674",
+          "discovered_at": "2026-05-15T12:49:45.942Z",
+          "uploader_name": "shawnshawnshawn",
+          "uploader_url": "https://musescore.com/user/39385785",
+          "views": 3300000,
+          "hearts": 54800,
+          "comments": 2200,
+          "rating": 5,
+          "rating_count": 11700,
+          "duration_hint": "03:29",
+          "bpm_hint": null,
+          "pages": "5",
+          "measures": "104",
+          "key": "E major, C♯ minor",
+          "parts": "1",
+          "credits": "Eligible",
+          "uploaded": "Sep 19, 2022",
+          "updated": "Jul 31, 2025",
+          "license_label": "Attribution, no derivatives",
+          "license_url": "https://creativecommons.org/licenses/by-nd/4.0/",
+          "privacy": "Everyone can see this score",
+          "tags": [
+            "Advanced",
+            "Pop",
+            "R&b, Funk & Soul",
+            "Solo Piano",
+            "Piano",
+            "Piano for Advanced",
+            "Pop for Piano",
+            "R&b, funk & soul for Piano"
+          ],
+          "related_versions": [
+            {
+              "label": "OfficialGolden Hour (Arr. Bernardo Pereira) - Jvke (Violin and Piano)Piano, Violin4.5",
+              "url": "https://musescore.com/user/97106398/scores/17403118"
+            },
+            {
+              "label": "Official",
+              "url": "https://musescore.com/pro/landing/official-scores?feature=badge-official"
+            },
+            {
+              "label": "Golden hour – JVKEPiano, Strings Group5",
+              "url": "https://musescore.com/user/12134331/scores/8457389"
+            },
+            {
+              "label": "Golden hourSolo Piano5",
+              "url": "https://musescore.com/user/84433/scores/8775498"
+            },
+            {
+              "label": "Golden Hour - JVKE (with fingering)Solo Piano5",
+              "url": "https://musescore.com/user/2423821/scores/9131148"
+            },
+            {
+              "label": "Golden hour – JVKESolo Piano4.5",
+              "url": "https://musescore.com/user/19935851/scores/8772048"
+            },
+            {
+              "label": "Golden hour – JVKE [Piano Only]Piano5",
+              "url": "https://musescore.com/user/12134331/scores/8548844"
+            },
+            {
+              "label": "Golden Hour – JVKE Golden Hour (easier version) – JVKESolo Piano5",
+              "url": "https://musescore.com/user/36367800/scores/11543425"
+            },
+            {
+              "label": "Golden Hour – JVKE (piano/cello)Cello, Piano4.5",
+              "url": "https://musescore.com/user/29857994/scores/8600405"
+            },
+            {
+              "label": "Golden hour – JVKE (Piano accompaniment)Solo Piano4.5",
+              "url": "https://musescore.com/user/20353851/scores/9004757"
+            },
+            {
+              "label": "Golden hour – JVKE (Original Ver.)Solo Piano4.5",
+              "url": "https://musescore.com/user/39385785/scores/9537301"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour - JVKE - (Jason Dyer)Flute Piccolo, Clarinet In B-flat and 13 more4.5",
+              "url": "https://musescore.com/user/36388665/scores/8584838"
+            },
+            {
+              "label": "Golden Hour – JVKESolo Violin4.5",
+              "url": "https://musescore.com/user/45125354/scores/10411699"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour - Concert BandFlute, Oboe, Bassoon, Clarinet In B-flat and 14 more4.5",
+              "url": "https://musescore.com/user/40408085/scores/8768277"
+            },
+            {
+              "label": "golden hour - JVKE | For 2 PianosPiano5",
+              "url": "https://musescore.com/user/4012561/scores/8779044"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour - BCViolin, Viola, Cello5",
+              "url": "https://musescore.com/user/35166536/scores/9138063"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour AccompanimentSolo Piano4.5",
+              "url": "https://musescore.com/user/19961391/scores/9432403"
+            },
+            {
+              "label": "Golden Hour – JVKESolo Piano5",
+              "url": "https://musescore.com/user/14816606/scores/9298468"
+            },
+            {
+              "label": "Golden Hour, Arr. for TrumpetTrumpet Other, Piano5",
+              "url": "https://musescore.com/user/35262893/scores/10002193"
+            },
+            {
+              "label": "Golden hour – JVKE arr. Nathaniel NgSolo Piano4.5",
+              "url": "https://musescore.com/user/37627233/scores/8586653"
+            },
+            {
+              "label": "Golden Hour – JVKE Golden Hour - Piano SoloSolo Piano4.5",
+              "url": "https://musescore.com/user/37265061/scores/10455940"
+            },
+            {
+              "label": "Golden Hour by JVKE for Wind EnsembleOboe, Flute, Clarinet Other, Bassoon and 15 more5",
+              "url": "https://musescore.com/user/31941970/scores/10530985"
+            }
+          ]
+        },
+        {
+          "difficulty_label": "beginner",
+          "score_id": "musescore:8772048",
+          "score_url": "https://musescore.com/user/19935851/scores/8772048",
+          "canonical_url": "https://musescore.com/user/19935851/scores/8772048",
+          "download_filename": "8772048__8772048__piano__beginner.mid",
+          "download_started_at": "2026-05-15T12:48:19.391Z",
+          "download_url": "https://musescore.com/score/download/index?score_id=8772048&type=mid&h=11602150422481469593",
+          "discovered_at": "2026-05-15T12:49:45.942Z",
+          "uploader_name": "OfficialGolden Hour (Arr. Bernardo Pereira) - Jvke (Violin and Piano)Piano, Violin4.5",
+          "uploader_url": "https://musescore.com/user/97106398/scores/17403118",
+          "views": 150000,
+          "hearts": 5100,
+          "comments": 115,
+          "rating": 4.5,
+          "rating_count": 1000,
+          "duration_hint": "03:26",
+          "bpm_hint": null,
+          "pages": "3",
+          "measures": "166",
+          "key": "E major, C♯ minor",
+          "parts": "1",
+          "credits": "Eligible",
+          "uploaded": "Oct 8, 2022",
+          "updated": "May 14, 2024",
+          "license_label": "(All rights reserved)",
+          "license_url": null,
+          "privacy": "Everyone can see this score",
+          "tags": [
+            "Beginner",
+            "Pop",
+            "R&b, Funk & Soul",
+            "Solo Piano",
+            "Piano",
+            "Piano for Beginner",
+            "Pop for Piano",
+            "R&b, funk & soul for Piano"
+          ],
+          "related_versions": [
+            {
+              "label": "OfficialGolden Hour (Arr. Bernardo Pereira) - Jvke (Violin and Piano)Piano, Violin4.5",
+              "url": "https://musescore.com/user/97106398/scores/17403118"
+            },
+            {
+              "label": "Official",
+              "url": "https://musescore.com/pro/landing/official-scores?feature=badge-official"
+            },
+            {
+              "label": "Golden Hour – JVKE (Updated Ver.)Solo Piano5",
+              "url": "https://musescore.com/user/39385785/scores/8668713"
+            },
+            {
+              "label": "Golden hour – JVKEPiano, Strings Group5",
+              "url": "https://musescore.com/user/12134331/scores/8457389"
+            },
+            {
+              "label": "Golden hourSolo Piano5",
+              "url": "https://musescore.com/user/84433/scores/8775498"
+            },
+            {
+              "label": "Golden Hour - JVKE (with fingering)Solo Piano5",
+              "url": "https://musescore.com/user/2423821/scores/9131148"
+            },
+            {
+              "label": "Golden hour – JVKE [Piano Only]Piano5",
+              "url": "https://musescore.com/user/12134331/scores/8548844"
+            },
+            {
+              "label": "Golden Hour – JVKE Golden Hour (easier version) – JVKESolo Piano5",
+              "url": "https://musescore.com/user/36367800/scores/11543425"
+            },
+            {
+              "label": "Golden Hour – JVKE (piano/cello)Cello, Piano4.5",
+              "url": "https://musescore.com/user/29857994/scores/8600405"
+            },
+            {
+              "label": "Golden hour – JVKE (Piano accompaniment)Solo Piano4.5",
+              "url": "https://musescore.com/user/20353851/scores/9004757"
+            },
+            {
+              "label": "Golden hour – JVKE (Original Ver.)Solo Piano4.5",
+              "url": "https://musescore.com/user/39385785/scores/9537301"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour - JVKE - (Jason Dyer)Flute Piccolo, Clarinet In B-flat and 13 more4.5",
+              "url": "https://musescore.com/user/36388665/scores/8584838"
+            },
+            {
+              "label": "Golden Hour – JVKESolo Violin4.5",
+              "url": "https://musescore.com/user/45125354/scores/10411699"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour - Concert BandFlute, Oboe, Bassoon, Clarinet In B-flat and 14 more4.5",
+              "url": "https://musescore.com/user/40408085/scores/8768277"
+            },
+            {
+              "label": "golden hour - JVKE | For 2 PianosPiano5",
+              "url": "https://musescore.com/user/4012561/scores/8779044"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour - BCViolin, Viola, Cello5",
+              "url": "https://musescore.com/user/35166536/scores/9138063"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour AccompanimentSolo Piano4.5",
+              "url": "https://musescore.com/user/19961391/scores/9432403"
+            },
+            {
+              "label": "Golden Hour – JVKESolo Piano5",
+              "url": "https://musescore.com/user/14816606/scores/9298468"
+            },
+            {
+              "label": "Golden Hour, Arr. for TrumpetTrumpet Other, Piano5",
+              "url": "https://musescore.com/user/35262893/scores/10002193"
+            },
+            {
+              "label": "Golden hour – JVKE arr. Nathaniel NgSolo Piano4.5",
+              "url": "https://musescore.com/user/37627233/scores/8586653"
+            },
+            {
+              "label": "Golden Hour – JVKE Golden Hour - Piano SoloSolo Piano4.5",
+              "url": "https://musescore.com/user/37265061/scores/10455940"
+            },
+            {
+              "label": "Golden Hour by JVKE for Wind EnsembleOboe, Flute, Clarinet Other, Bassoon and 15 more5",
+              "url": "https://musescore.com/user/31941970/scores/10530985"
+            }
+          ]
+        },
+        {
+          "difficulty_label": "intermediate",
+          "score_id": "musescore:8775498",
+          "score_url": "https://musescore.com/user/84433/scores/8775498",
+          "canonical_url": "https://musescore.com/user/84433/scores/8775498",
+          "download_filename": "8775498__8775498__piano__intermediate.mid",
+          "download_started_at": "2026-05-15T12:48:49.784Z",
+          "download_url": "https://musescore.com/score/download/index?score_id=8775498&type=mid&h=1883466461301400006",
+          "discovered_at": "2026-05-15T12:49:45.942Z",
+          "uploader_name": "OfficialGolden Hour (Arr. Bernardo Pereira) - Jvke (Violin and Piano)Piano, Violin4.5",
+          "uploader_url": "https://musescore.com/user/97106398/scores/17403118",
+          "views": 181000,
+          "hearts": 15900,
+          "comments": 159,
+          "rating": 5,
+          "rating_count": 2100,
+          "duration_hint": "01:30",
+          "bpm_hint": null,
+          "pages": "4",
+          "measures": "24",
+          "key": "E major, C♯ minor",
+          "parts": "1",
+          "credits": "Eligible",
+          "uploaded": "Oct 8, 2022",
+          "updated": "May 14, 2024",
+          "license_label": "(All rights reserved)",
+          "license_url": null,
+          "privacy": "Everyone can see this score",
+          "tags": [
+            "Intermediate",
+            "Pop",
+            "Solo Piano",
+            "Piano",
+            "Piano for Intermediate",
+            "Pop for Piano"
+          ],
+          "related_versions": [
+            {
+              "label": "OfficialGolden Hour (Arr. Bernardo Pereira) - Jvke (Violin and Piano)Piano, Violin4.5",
+              "url": "https://musescore.com/user/97106398/scores/17403118"
+            },
+            {
+              "label": "Official",
+              "url": "https://musescore.com/pro/landing/official-scores?feature=badge-official"
+            },
+            {
+              "label": "Golden Hour – JVKE (Updated Ver.)Solo Piano5",
+              "url": "https://musescore.com/user/39385785/scores/8668713"
+            },
+            {
+              "label": "Golden hour – JVKEPiano, Strings Group5",
+              "url": "https://musescore.com/user/12134331/scores/8457389"
+            },
+            {
+              "label": "Golden Hour - JVKE (with fingering)Solo Piano5",
+              "url": "https://musescore.com/user/2423821/scores/9131148"
+            },
+            {
+              "label": "Golden hour – JVKESolo Piano4.5",
+              "url": "https://musescore.com/user/19935851/scores/8772048"
+            },
+            {
+              "label": "Golden hour – JVKE [Piano Only]Piano5",
+              "url": "https://musescore.com/user/12134331/scores/8548844"
+            },
+            {
+              "label": "Golden Hour – JVKE Golden Hour (easier version) – JVKESolo Piano5",
+              "url": "https://musescore.com/user/36367800/scores/11543425"
+            },
+            {
+              "label": "Golden Hour – JVKE (piano/cello)Cello, Piano4.5",
+              "url": "https://musescore.com/user/29857994/scores/8600405"
+            },
+            {
+              "label": "Golden hour – JVKE (Piano accompaniment)Solo Piano4.5",
+              "url": "https://musescore.com/user/20353851/scores/9004757"
+            },
+            {
+              "label": "Golden hour – JVKE (Original Ver.)Solo Piano4.5",
+              "url": "https://musescore.com/user/39385785/scores/9537301"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour - JVKE - (Jason Dyer)Flute Piccolo, Clarinet In B-flat and 13 more4.5",
+              "url": "https://musescore.com/user/36388665/scores/8584838"
+            },
+            {
+              "label": "Golden Hour – JVKESolo Violin4.5",
+              "url": "https://musescore.com/user/45125354/scores/10411699"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour - Concert BandFlute, Oboe, Bassoon, Clarinet In B-flat and 14 more4.5",
+              "url": "https://musescore.com/user/40408085/scores/8768277"
+            },
+            {
+              "label": "golden hour - JVKE | For 2 PianosPiano5",
+              "url": "https://musescore.com/user/4012561/scores/8779044"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour - BCViolin, Viola, Cello5",
+              "url": "https://musescore.com/user/35166536/scores/9138063"
+            },
+            {
+              "label": "Golden hour – JVKE Golden Hour AccompanimentSolo Piano4.5",
+              "url": "https://musescore.com/user/19961391/scores/9432403"
+            },
+            {
+              "label": "Golden Hour – JVKESolo Piano5",
+              "url": "https://musescore.com/user/14816606/scores/9298468"
+            },
+            {
+              "label": "Golden Hour, Arr. for TrumpetTrumpet Other, Piano5",
+              "url": "https://musescore.com/user/35262893/scores/10002193"
+            },
+            {
+              "label": "Golden hour – JVKE arr. Nathaniel NgSolo Piano4.5",
+              "url": "https://musescore.com/user/37627233/scores/8586653"
+            },
+            {
+              "label": "Golden Hour – JVKE Golden Hour - Piano SoloSolo Piano4.5",
+              "url": "https://musescore.com/user/37265061/scores/10455940"
+            },
+            {
+              "label": "Golden Hour by JVKE for Wind EnsembleOboe, Flute, Clarinet Other, Bassoon and 15 more5",
+              "url": "https://musescore.com/user/31941970/scores/10530985"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

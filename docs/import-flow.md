@@ -85,7 +85,7 @@ Storage notes:
 - matched or unmatched import audit rows
 - linked original MIDI assets
 - normalized arrangements and works
-- pending pipeline jobs for downstream processing
+- queued pipeline jobs for downstream processing
 
 ## Operator note: public URLs vs service-role access
 

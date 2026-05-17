@@ -115,7 +115,14 @@ export async function registerPipelineWorkers(
             sourceSite: job.data.sourceSite,
             rawTitle: job.data.rawTitle,
             status: "failed",
+            state: "failed",
+            phase: null,
             lastError: getErrorMessage(error),
+            errorReason: "unexpected_exception",
+            errorContext:
+              error instanceof Error
+                ? { message: error.message, stack: error.stack ?? null }
+                : { message: String(error) },
           });
           throw error;
         }

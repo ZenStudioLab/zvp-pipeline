@@ -81,6 +81,26 @@ describe('provider adapter contract', () => {
     );
   });
 
+  it('normalizes MuseScore difficulty labels for source-item provenance', () => {
+    const result = adaptScraperExportRecords([
+      {
+        canonical_title: 'Golden Hour',
+        artist_name: 'JVKE',
+        variants: [
+          {
+            score_id: 'musescore:8772048',
+            score_url: 'https://musescore.com/user/1/scores/8772048',
+            difficulty_label: 'beginner',
+            download_started_at: '2026-05-01T10:00:00.000Z',
+          },
+        ],
+      },
+    ]);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.records[0].variants[0].difficulty_label).toBe('Beginner');
+  });
+
   it('reports unsupported providers, conflicting evidence, and missing timestamps without normalized variants', () => {
     const result = adaptScraperExportRecords([
       {

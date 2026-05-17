@@ -18,8 +18,9 @@ import { writeCatalog } from './importers/catalog-writer.js';
 import { createImportRun, createImportEvent, updateImportRun } from './importers/import-audit.js';
 import { adaptScraperExportRecords } from './importers/provider-adapter.js';
 import { createStorageClientFromEnv, downloadFromStorage } from './lib/storage-client.js';
-import type { TimingConfig } from './importers/types.js';
-import type { ImportDiagnostic, NormalizedImportVariant, RawScraperRecord } from './importers/provider-adapter.js';
+import type { MatchConfidence, MatchMethod, TimingConfig } from './importers/types.js';
+import type { ImportDiagnostic, NormalizedImportRecord, NormalizedImportVariant, RawScraperRecord } from './importers/provider-adapter.js';
+import type { ScannedFile } from './importers/download-scanner.js';
 import type { StorageClient } from './importers/asset-uploader.js';
 import type { ZenDatabase } from '@zen/db';
 import { arrangement, pipelineJob, sheetAsset, work } from '@zen/db';
@@ -36,6 +37,12 @@ type RunCommandOptions = {
 	status?: string;
 	concurrency: number;
 	sourceItems?: boolean;
+	forceGenerate?: boolean;
+	arrangementId?: string;
+	reason?: string;
+	publish?: boolean;
+	retryFailed?: boolean;
+	requeueStranded?: boolean;
 };
 
 type ImportCommandOptions = {
@@ -44,6 +51,7 @@ type ImportCommandOptions = {
 	timingX?: number;
 	timingY?: number;
 	timingZ?: number;
+	maxMatchingWindowSeconds?: number;
 	limit?: number;
 	dryRun: boolean;
 };
@@ -56,6 +64,105 @@ type ImportStats = {
 	dryRun: boolean;
 	importRunId: string | null;
 	diagnostics?: ImportDiagnostic[];
+	matchedFileDetails?: ImportMatchedFileDetail[];
+	unmatchedLocalFileDetails?: ImportUnmatchedLocalFileDetail[];
+	unmatchedExportVariantDetails?: ImportUnmatchedExportVariantDetail[];
+};
+
+type ImportUploadDetail = {
+	performed: boolean;
+	reused: boolean;
+	assetId: string | null;
+	publicUrl: string | null;
+	byteSize: number | null;
+};
+
+type ImportCatalogDetail = {
+	performed: boolean;
+	arrangementId: string | null;
+	arrangementNew: boolean;
+	pipelineJobId: string | null;
+	pipelineJobNew: boolean;
+};
+
+type ImportMatchedFileDetail = {
+	localFilePath: string;
+	localFilename: string;
+	localFileBirthtime: string;
+	exportTitle: string;
+	exportSourceUrl: string;
+	exportDifficultyLabel: string | null;
+	exportDownloadStartedAt: string | null;
+	matchMethod: MatchMethod;
+	confidence: MatchConfidence;
+	timeDeltaSeconds: number;
+	maxMatchingWindowSeconds: number;
+	windowDescription: string;
+	reviewStatus: 'needs_review' | null;
+	upload: ImportUploadDetail;
+	catalog: ImportCatalogDetail;
+};
+
+type ImportNearestCandidateDetail = {
+	exportTitle: string;
+	exportSourceUrl: string;
+	exportDifficultyLabel: string | null;
+	exportDownloadStartedAt: string | null;
+	timeDeltaSeconds: number;
+	maxMatchingWindowSeconds: number;
+	windowDescription?: string;
+	alreadyMatchedToOtherFile?: boolean;
+};
+
+type ImportCandidateComparisonDetail = {
+	exportTitle: string;
+	exportSourceUrl: string;
+	exportDifficultyLabel: string | null;
+	exportDownloadStartedAt: string | null;
+	timeDeltaSeconds: number | null;
+	withinMatchingWindow: boolean;
+	alreadyMatchedToOtherFile: boolean;
+};
+
+type ImportSummary = {
+	scannedLocalFiles: number;
+	matchedFiles: number;
+	unmatchedLocalFiles: number;
+	newUploads: number;
+	reusedAssets: number;
+	catalogRowsProcessed: number;
+	catalogRowsWritten: number;
+	matchedFileDetails: ImportMatchedFileDetail[];
+	unmatchedLocalFileDetails: ImportUnmatchedLocalFileDetail[];
+	unmatchedExportVariantDetails: ImportUnmatchedExportVariantDetail[];
+	explanation: string;
+};
+
+type ImportUnmatchedLocalFileDetail = {
+	localFilePath: string;
+	localFilename: string;
+	localFileBirthtime: string;
+	reasonCode: string;
+	reasonMessage: string;
+	nearestCandidate: ImportNearestCandidateDetail | null;
+	candidateComparisons: ImportCandidateComparisonDetail[];
+};
+
+type ImportUnmatchedExportVariantDetail = {
+	exportTitle: string | null;
+	exportSourceUrl: string | null;
+	exportDifficultyLabel: string | null;
+	reasonCode: string;
+	reasonMessage: string;
+	nearestCandidate: {
+		localFilePath?: string;
+		localFilename?: string;
+		localFileBirthtime?: string;
+		timeDeltaSeconds: number;
+		maxMatchingWindowSeconds: number;
+		alreadyMatchedToOtherFile?: boolean;
+		windowDescription?: string;
+	} | null;
 };
 
 type PipelineStats = Awaited<ReturnType<Awaited<ReturnType<typeof createPipelineRuntimeRepository>>['getStats']>>;
@@ -203,6 +310,19 @@ function formatStats(stats: PipelineStats): string {
 	return lines.join('\n');
 }
 
+function formatInventoryWarning(warning: {
+	kind: string;
+	sourceUrl: string;
+	status: string;
+	state: string;
+	phase: string | null;
+	processedAt: string | Date | null;
+	phaseStartedAt: string | Date | null;
+}): string {
+	const phaseStartedAt = warning.phaseStartedAt ? new Date(warning.phaseStartedAt).toISOString() : 'null';
+	return `[stranded] kind=${warning.kind} sourceUrl=${warning.sourceUrl} status=${warning.status} state=${warning.state} phase=${warning.phase ?? 'null'} phaseStartedAt=${phaseStartedAt}`;
+}
+
 function timingValue(value: unknown): number | undefined {
 	if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
 		return value;
@@ -216,7 +336,7 @@ function timingValue(value: unknown): number | undefined {
 
 function resolveImportTimingConfig(
 	exportJson: { timing_config?: unknown; records?: RawScraperRecord[] },
-	options: Pick<ImportCommandOptions, 'timingX' | 'timingY' | 'timingZ'>,
+	options: Pick<ImportCommandOptions, 'timingX' | 'timingY' | 'timingZ' | 'maxMatchingWindowSeconds'>,
 ): TimingConfig {
 	const firstRecordTiming = exportJson.records?.find((record) => record.timing_config)?.timing_config;
 	const rawTiming = (exportJson.timing_config ?? firstRecordTiming) as Record<string, unknown> | undefined;
@@ -225,8 +345,268 @@ function resolveImportTimingConfig(
 		x: options.timingX ?? timingValue(rawTiming?.x) ?? DEFAULT_IMPORT_TIMING.x,
 		y: options.timingY ?? timingValue(rawTiming?.y) ?? DEFAULT_IMPORT_TIMING.y,
 		z: options.timingZ ?? timingValue(rawTiming?.z) ?? DEFAULT_IMPORT_TIMING.z,
-		maxMatchingWindowSeconds: timingValue(rawTiming?.maxMatchingWindowSeconds ?? rawTiming?.max_matching_window_seconds),
+		maxMatchingWindowSeconds:
+			options.maxMatchingWindowSeconds ?? timingValue(rawTiming?.maxMatchingWindowSeconds ?? rawTiming?.max_matching_window_seconds),
 	};
+}
+
+function maxMatchingWindowSeconds(timingConfig: TimingConfig): number {
+	return timingConfig.maxMatchingWindowSeconds ?? 60;
+}
+
+function buildImportSummary(stats: ImportStats): ImportSummary {
+	const unmatchedLocalFiles = Math.max(0, stats.filesScanned - stats.filesMatched);
+	const reusedAssets = stats.dryRun ? 0 : Math.max(0, stats.filesMatched - stats.filesUploaded);
+	const explanationParts: string[] = [];
+
+	if (stats.dryRun) {
+		explanationParts.push('Dry run skipped uploads and catalog writes.');
+	}
+
+	if (unmatchedLocalFiles > 0) {
+		explanationParts.push(`${unmatchedLocalFiles} local file(s) did not match any export record.`);
+	}
+
+	if (reusedAssets > 0) {
+		explanationParts.push(`${reusedAssets} matched file(s) reused existing assets, so only ${stats.filesUploaded} new upload(s) were needed.`);
+	}
+
+	if (explanationParts.length === 0) {
+		explanationParts.push('All scanned files matched and created new uploads and catalog rows.');
+	}
+
+	return {
+		scannedLocalFiles: stats.filesScanned,
+		matchedFiles: stats.filesMatched,
+		unmatchedLocalFiles,
+		newUploads: stats.filesUploaded,
+		reusedAssets,
+		catalogRowsProcessed: stats.dryRun ? 0 : stats.filesMatched,
+		catalogRowsWritten: stats.rowsCreated,
+		matchedFileDetails: stats.matchedFileDetails ?? [],
+		unmatchedLocalFileDetails: stats.unmatchedLocalFileDetails ?? [],
+		unmatchedExportVariantDetails: stats.unmatchedExportVariantDetails ?? [],
+		explanation: explanationParts.join(' '),
+	};
+}
+
+function buildImportMatchDetails(input: {
+	files: ScannedFile[];
+	records: NormalizedImportRecord[];
+	matches: Array<{
+		file: ScannedFile;
+		variant: NormalizedImportVariant;
+		matchMethod: MatchMethod;
+		confidence: MatchConfidence;
+		timeDeltaSeconds: number;
+		matchReason: string;
+		reviewStatus?: 'needs_review';
+	}>;
+	uploadByPath: Map<string, ImportUploadDetail>;
+	catalogByPath: Map<string, ImportCatalogDetail>;
+	unmatchedFiles: ScannedFile[];
+	timingConfig: TimingConfig;
+}): {
+	matchedFileDetails: ImportMatchedFileDetail[];
+	unmatchedLocalFileDetails: ImportUnmatchedLocalFileDetail[];
+	unmatchedExportVariantDetails: ImportUnmatchedExportVariantDetail[];
+} {
+	const matchedFileDetails = input.matches.map((match) => ({
+		localFilePath: match.file.absolutePath,
+		localFilename: match.file.filename,
+		localFileBirthtime: match.file.birthtime.toISOString(),
+		exportTitle: match.variant.title,
+		exportSourceUrl: match.variant.source_url,
+		exportDifficultyLabel: match.variant.difficulty_label ?? null,
+		exportDownloadStartedAt: match.variant.download_started_at ?? null,
+		matchMethod: match.matchMethod,
+		confidence: match.confidence,
+		timeDeltaSeconds: match.timeDeltaSeconds,
+		maxMatchingWindowSeconds: maxMatchingWindowSeconds(input.timingConfig),
+		windowDescription: match.matchReason,
+		reviewStatus: match.reviewStatus ?? null,
+		upload: input.uploadByPath.get(match.file.absolutePath) ?? {
+			performed: false,
+			reused: false,
+			assetId: null,
+			publicUrl: null,
+			byteSize: null,
+		},
+		catalog: input.catalogByPath.get(match.file.absolutePath) ?? {
+			performed: false,
+			arrangementId: null,
+			arrangementNew: false,
+			pipelineJobId: null,
+			pipelineJobNew: false,
+		},
+	}));
+
+	const matchedVariants = new Set(input.matches.map((match) => match.variant));
+	const unmatchedLocalFileDetails = input.unmatchedFiles.map((file) => {
+		const nearestCandidate = findNearestVariantCandidate(file, input.records, input.timingConfig, matchedVariants);
+		const hasVariants = input.records.some((record) => record.variants.length > 0);
+		const hasTimestampedVariants = input.records.some((record) => record.variants.some((variant) => Boolean(variant.download_started_at)));
+		const reasonCode = !hasVariants
+			? 'no_export_variants'
+			: !hasTimestampedVariants
+				? 'missing_timestamp'
+				: nearestCandidate?.alreadyMatchedToOtherFile && nearestCandidate.timeDeltaSeconds <= (input.timingConfig.maxMatchingWindowSeconds ?? 60)
+					? 'already_consumed_by_better_match'
+					: 'outside_window';
+		return {
+			localFilePath: file.absolutePath,
+			localFilename: file.filename,
+			localFileBirthtime: file.birthtime.toISOString(),
+			reasonCode,
+			reasonMessage: nearestCandidate
+				? reasonCode === 'already_consumed_by_better_match'
+					? `Nearest export variant was already matched to another file; it was ${nearestCandidate.timeDeltaSeconds.toFixed(1)}s away. ${nearestCandidate.windowDescription ?? ''}`.trim()
+					: reasonCode === 'missing_timestamp'
+						? 'Export variants exist but none have a usable download_started_at timestamp.'
+						: `Nearest export variant was ${nearestCandidate.timeDeltaSeconds.toFixed(1)}s away, outside the ${input.timingConfig.maxMatchingWindowSeconds ?? 60}s window. ${nearestCandidate.windowDescription ?? ''}`.trim()
+				: reasonCode === 'missing_timestamp'
+					? 'Export variants exist but none have a usable download_started_at timestamp.'
+					: 'No export variant was available within the timing window.',
+			nearestCandidate,
+			candidateComparisons: buildLocalFileCandidateComparisons(file, input.records, input.timingConfig, matchedVariants),
+		};
+	});
+
+	const unmatchedExportVariantDetails = buildUnmatchedExportVariantDetails(
+		input.records,
+		matchedVariants,
+		input.files,
+		input.timingConfig,
+		new Set(input.matches.map((match) => match.file.absolutePath)),
+	);
+
+	return {
+		matchedFileDetails,
+		unmatchedLocalFileDetails,
+		unmatchedExportVariantDetails,
+	};
+}
+
+function findNearestVariantCandidate(
+	file: ScannedFile,
+	records: NormalizedImportRecord[],
+	timingConfig: TimingConfig,
+ 	matchedVariants: Set<NormalizedImportVariant>,
+): ImportNearestCandidateDetail | null {
+	let best: ImportNearestCandidateDetail | null = null;
+	const windowSeconds = maxMatchingWindowSeconds(timingConfig);
+	for (const record of records) {
+		for (const variant of record.variants) {
+			if (!variant.download_started_at) continue;
+			const startedAtMs = new Date(variant.download_started_at).getTime();
+			if (Number.isNaN(startedAtMs)) continue;
+			const deltaSeconds = Math.abs(file.birthtime.getTime() - startedAtMs) / 1000;
+			if (!best || deltaSeconds < best.timeDeltaSeconds) {
+				best = {
+					exportTitle: record.canonical_title,
+					exportSourceUrl: variant.source_url,
+					exportDifficultyLabel: variant.difficulty_label ?? null,
+					exportDownloadStartedAt: variant.download_started_at,
+					timeDeltaSeconds: Math.round(deltaSeconds * 10) / 10,
+					maxMatchingWindowSeconds: windowSeconds,
+					alreadyMatchedToOtherFile: matchedVariants.has(variant),
+					windowDescription: deltaSeconds <= windowSeconds
+						? `Closest candidate within ${windowSeconds}s window.`
+						: `Closest candidate is ${Math.round(deltaSeconds * 10) / 10}s away, outside the ${windowSeconds}s window.`,
+				};
+			}
+		}
+	}
+	return best;
+}
+
+function buildLocalFileCandidateComparisons(
+	file: ScannedFile,
+	records: NormalizedImportRecord[],
+	timingConfig: TimingConfig,
+	matchedVariants: Set<NormalizedImportVariant>,
+): ImportCandidateComparisonDetail[] {
+	const windowSeconds = maxMatchingWindowSeconds(timingConfig);
+	return records.flatMap((record) => (record.variants as NormalizedImportVariant[]).map((variant) => {
+		const startedAt = variant.download_started_at ?? null;
+		const startedAtMs = startedAt ? new Date(startedAt).getTime() : Number.NaN;
+		const deltaSeconds = Number.isNaN(startedAtMs)
+			? null
+			: Math.round((Math.abs(file.birthtime.getTime() - startedAtMs) / 1000) * 10) / 10;
+		return {
+			exportTitle: record.canonical_title,
+			exportSourceUrl: variant.source_url,
+			exportDifficultyLabel: variant.difficulty_label ?? null,
+			exportDownloadStartedAt: startedAt,
+			timeDeltaSeconds: deltaSeconds,
+			withinMatchingWindow: deltaSeconds !== null && deltaSeconds <= windowSeconds,
+			alreadyMatchedToOtherFile: matchedVariants.has(variant),
+		};
+	})).sort((a, b) => (a.timeDeltaSeconds ?? Number.POSITIVE_INFINITY) - (b.timeDeltaSeconds ?? Number.POSITIVE_INFINITY));
+}
+
+function buildUnmatchedExportVariantDetails(
+	records: NormalizedImportRecord[],
+	matchedVariants: Set<NormalizedImportVariant>,
+	files: ScannedFile[],
+	timingConfig: TimingConfig,
+	matchedFiles: Set<string>,
+): ImportUnmatchedExportVariantDetail[] {
+	const details: ImportUnmatchedExportVariantDetail[] = [];
+	const windowSeconds = maxMatchingWindowSeconds(timingConfig);
+	for (const record of records) {
+		for (const variant of record.variants) {
+			if (matchedVariants.has(variant)) continue;
+			const nearestCandidate = findNearestFileCandidate(variant, files, timingConfig, matchedFiles);
+			details.push({
+				exportTitle: record.canonical_title,
+				exportSourceUrl: variant.source_url,
+				exportDifficultyLabel: variant.difficulty_label ?? null,
+				reasonCode: !files.length
+					? 'no_local_files'
+					: nearestCandidate?.alreadyMatchedToOtherFile && nearestCandidate.timeDeltaSeconds <= windowSeconds
+						? 'already_consumed_by_better_match'
+						: 'no_local_file_in_window',
+				reasonMessage: nearestCandidate
+					? nearestCandidate.alreadyMatchedToOtherFile && nearestCandidate.timeDeltaSeconds <= windowSeconds
+						? `Nearest local file was already matched to another export variant; it was ${nearestCandidate.timeDeltaSeconds.toFixed(1)}s away. ${nearestCandidate.windowDescription ?? ''}`.trim()
+						: `No local file remained within the timing window; nearest local file was ${nearestCandidate.timeDeltaSeconds.toFixed(1)}s away. ${nearestCandidate.windowDescription ?? ''}`.trim()
+					: 'No local file was available for this export variant.',
+				nearestCandidate,
+			});
+		}
+	}
+	return details;
+}
+
+function findNearestFileCandidate(
+	variant: NormalizedImportVariant,
+	files: ScannedFile[],
+	timingConfig: TimingConfig,
+	matchedFiles: Set<string>,
+): ImportUnmatchedExportVariantDetail['nearestCandidate'] {
+	if (!variant.download_started_at) return null;
+	const startedAtMs = new Date(variant.download_started_at).getTime();
+	if (Number.isNaN(startedAtMs)) return null;
+	let best: ImportUnmatchedExportVariantDetail['nearestCandidate'] = null;
+	const windowSeconds = maxMatchingWindowSeconds(timingConfig);
+	for (const file of files) {
+		const deltaSeconds = Math.abs(file.birthtime.getTime() - startedAtMs) / 1000;
+		if (!best || deltaSeconds < best.timeDeltaSeconds) {
+			best = {
+				localFilePath: file.absolutePath,
+				localFilename: file.filename,
+				localFileBirthtime: file.birthtime.toISOString(),
+				timeDeltaSeconds: Math.round(deltaSeconds * 10) / 10,
+				maxMatchingWindowSeconds: windowSeconds,
+				alreadyMatchedToOtherFile: matchedFiles.has(file.absolutePath),
+				windowDescription: deltaSeconds <= windowSeconds
+					? `Closest candidate within ${windowSeconds}s window.`
+					: `Closest candidate is ${Math.round(deltaSeconds * 10) / 10}s away, outside the ${windowSeconds}s window.`,
+			};
+		}
+	}
+	return best;
 }
 
 // ── Default dependencies factory ─────────────────────────────────────────────
@@ -422,10 +802,14 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 			// 5. Process matches
 			let filesUploaded = 0;
 			let rowsCreated = 0;
+			const uploadByPath = new Map<string, ImportUploadDetail>();
+			const catalogByPath = new Map<string, ImportCatalogDetail>();
+			const matchedFiles = new Set<string>();
 
 			const storageClientForUpload: StorageClient = storage;
 
 			for (const match of matches) {
+				matchedFiles.add(match.file.absolutePath);
 				if (!options.dryRun) {
 					const normalizedVariant = match.variant as NormalizedImportVariant;
 					// 5a. Upload matched file to storage
@@ -439,6 +823,13 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 						},
 					);
 					filesUploaded += uploadResult.reused ? 0 : 1;
+					uploadByPath.set(match.file.absolutePath, {
+						performed: true,
+						reused: uploadResult.reused,
+						assetId: uploadResult.assetId,
+						publicUrl: uploadResult.publicUrl,
+						byteSize: uploadResult.byteSize,
+					});
 
 					// 5b. Write catalog (work + arrangement + pipeline_job)
 					const catalogResult = await writeCatalog(normalizedVariant, {
@@ -449,6 +840,13 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 					});
 					await updateAssetArrangement(repository.db, uploadResult.assetId, catalogResult.arrangementId);
 					rowsCreated += 1;
+					catalogByPath.set(match.file.absolutePath, {
+						performed: true,
+						arrangementId: catalogResult.arrangementId,
+						arrangementNew: catalogResult.arrangementNew,
+						pipelineJobId: catalogResult.pipelineJobId,
+						pipelineJobNew: catalogResult.pipelineJobNew,
+					});
 
 					// 5c. Create import_event for audit
 					await createImportEvent(repository.db, importRunId!, {
@@ -467,6 +865,21 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 						},
 						confidenceBand: match.confidence,
 						structuralValidationFailed: match.reviewStatus === 'needs_review',
+					});
+				} else {
+					uploadByPath.set(match.file.absolutePath, {
+						performed: false,
+						reused: false,
+						assetId: null,
+						publicUrl: null,
+						byteSize: null,
+					});
+					catalogByPath.set(match.file.absolutePath, {
+						performed: false,
+						arrangementId: null,
+						arrangementNew: false,
+						pipelineJobId: null,
+						pipelineJobNew: false,
 					});
 				}
 			}
@@ -497,6 +910,24 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 				await updateImportRun(repository.db, importRunId, 'completed');
 			}
 
+			const detailed = buildImportMatchDetails({
+				files: scanResult.files,
+				records: limitedRecords,
+				matches: matches.map((match) => ({
+					file: match.file,
+					variant: match.variant as NormalizedImportVariant,
+					matchMethod: match.matchMethod,
+					confidence: match.confidence,
+					timeDeltaSeconds: match.timeDeltaSeconds,
+					matchReason: match.matchReason,
+					reviewStatus: match.reviewStatus,
+				})),
+				uploadByPath,
+				catalogByPath,
+				unmatchedFiles,
+				timingConfig,
+			});
+
 			return {
 				filesScanned: scanResult.files.length,
 				filesMatched: matches.length,
@@ -505,6 +936,9 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 				dryRun: options.dryRun,
 				importRunId,
 				diagnostics: adapted.diagnostics,
+				matchedFileDetails: detailed.matchedFileDetails,
+				unmatchedLocalFileDetails: detailed.unmatchedLocalFileDetails,
+				unmatchedExportVariantDetails: detailed.unmatchedExportVariantDetails,
 			};
 		},
 
@@ -530,11 +964,15 @@ async function createDefaultDependencies(options: { skipRevalidation?: boolean }
 
 /**
  * Coerce a raw DB string to SourceDifficultyLabel.
+ * Keep this in sync with provider-adapter.ts source difficulty normalization.
  * Unknown / null values become null so callers can omit unrecognised labels
  * without risking silent type widening.
  */
-function asSourceDifficultyLabel(v: string | null): SourceDifficultyLabel | null {
-	if (v === 'Beginner' || v === 'Intermediate' || v === 'Advanced') return v;
+export function asSourceDifficultyLabel(v: string | null): SourceDifficultyLabel | null {
+	const label = v?.trim().toLowerCase();
+	if (label === 'beginner') return 'Beginner';
+	if (label === 'intermediate') return 'Intermediate';
+	if (label === 'advanced') return 'Advanced';
 	return null;
 }
 
@@ -543,6 +981,150 @@ async function handleSourceItemsRun(
 	repository: Awaited<ReturnType<typeof createPipelineRuntimeRepository>>,
 ): Promise<unknown> {
 	const logger = new PipelineLogger();
+	const inventory = await repository.getSourceItemInventory({ source: options.source });
+	if (options.forceGenerate) {
+		const forceSource = await repository.getSourceItemForForceGeneration({
+			arrangementId: options.arrangementId!,
+			source: options.source,
+		});
+
+		if (!forceSource) {
+			throw new Error(`No source item found for arrangement-id: ${options.arrangementId}`);
+		}
+
+		const fileBuffer = await downloadFromStorage(forceSource.bucket, forceSource.objectPath);
+
+		try {
+			const processed = await processPipelineJob(
+				{
+					forceGeneration: {
+						jobId: forceSource.id,
+						forcedAt: new Date(),
+						forceReason: options.reason!.trim(),
+						forceContext: {
+							arrangementId: options.arrangementId,
+							sourceUrl: forceSource.sourceUrl,
+							sourceSite: forceSource.sourceSite,
+							operatorPublish: options.publish,
+						},
+						publish: Boolean(options.publish),
+					},
+					sourceUrl: forceSource.sourceUrl,
+					sourceSite: forceSource.sourceSite ?? resolveSourceSite(forceSource.sourceUrl),
+					rawTitle: forceSource.rawTitle ?? path.parse(forceSource.objectPath).name,
+					rawArtist: '',
+					tips: [],
+					file: new Uint8Array(fileBuffer),
+					dryRun: false,
+					workId: forceSource.workId ?? null,
+					arrangementId: forceSource.arrangementId ?? null,
+					sourceDifficultyLabel: asSourceDifficultyLabel(forceSource.sourceDifficultyLabel),
+					conversionLevel: 'Adept',
+				},
+				repository,
+			);
+
+			const needsReview = processed.outcome === 'needs_review';
+			process.stderr.write(
+				`[force] arrangementId=${options.arrangementId} reason="${options.reason!.trim()}" publish=${Boolean(options.publish)} outcome=${processed.outcome} needsReview=${needsReview} sourceUrl=${forceSource.sourceUrl}\n`,
+			);
+			logger.log({
+				status: processed.outcome,
+				source_url: forceSource.sourceUrl,
+				needs_review: needsReview,
+				details: {
+					mode: 'force',
+					arrangementId: options.arrangementId,
+					reason: options.reason!.trim(),
+					publish: Boolean(options.publish),
+					outcome: processed.outcome,
+					sourceState: 'untouched',
+					sheetId: processed.sheetId ?? null,
+				},
+			});
+
+			return {
+				inventory,
+				entries: logger.getEntries(),
+				summary: logger.summarize(),
+				forceGeneration: {
+					arrangementId: options.arrangementId,
+					forced: true,
+					outcome: processed.outcome,
+					needsReview,
+				},
+			};
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unknown force generation error.';
+			process.stderr.write(
+				`[force-failed] arrangementId=${options.arrangementId} reason="${options.reason!.trim()}" message="${message}" sourceUrl=${forceSource.sourceUrl}\n`,
+			);
+			logger.log({
+				status: 'failed',
+				source_url: forceSource.sourceUrl,
+				quality_reasons: [],
+				details: {
+					mode: 'force',
+					arrangementId: options.arrangementId,
+					reason: options.reason!.trim(),
+					publish: Boolean(options.publish),
+					failureMessage: message,
+					sourceState: 'untouched',
+				},
+			});
+			throw error;
+		}
+	}
+	process.stderr.write(`[inventory] queued=${inventory.queued} running=${inventory.running} failed=${inventory.failed} rejected=${inventory.rejected} published=${inventory.published} stranded=${inventory.stranded} stale=${inventory.stale}\n`);
+	for (const warning of inventory.warnings) {
+		process.stderr.write(`${formatInventoryWarning(warning)}\n`);
+	}
+	if (inventory.warnings.length > 0) {
+		logger.log({
+			status: 'failed',
+			source_url: inventory.warnings[0].sourceUrl,
+			quality_reasons: [],
+			details: { warningCount: inventory.warnings.length },
+		});
+	}
+
+	if (options.retryFailed) {
+		const recovery = await repository.requeueFailedJobs({ source: options.source });
+		for (const sourceUrl of recovery.sourceUrls) {
+			process.stderr.write(`[recovery] mode=retry-failed sourceUrl=${sourceUrl}\n`);
+		}
+		logger.log({
+			status: 'failed',
+			source_url: recovery.sourceUrls[0] ?? 'unknown',
+			quality_reasons: [],
+			details: { mode: 'retry-failed', requeued: recovery.requeued },
+		});
+		return {
+			inventory,
+			recovery,
+			entries: logger.getEntries(),
+			summary: logger.summarize(),
+		};
+	}
+
+	if (options.requeueStranded) {
+		const recovery = await repository.requeueStrandedJobs({ source: options.source });
+		for (const sourceUrl of recovery.sourceUrls) {
+			process.stderr.write(`[recovery] mode=requeue-stranded sourceUrl=${sourceUrl}\n`);
+		}
+		logger.log({
+			status: 'failed',
+			source_url: recovery.sourceUrls[0] ?? 'unknown',
+			quality_reasons: [],
+			details: { mode: 'requeue-stranded', requeued: recovery.requeued },
+		});
+		return {
+			inventory,
+			recovery,
+			entries: logger.getEntries(),
+			summary: logger.summarize(),
+		};
+	}
 
 	// Query pending pipeline_jobs with their asset info
 	const jobs = await repository.listJobsWithAssets({
@@ -553,9 +1135,13 @@ async function handleSourceItemsRun(
 
 	if (jobs.length === 0) {
 		return {
+			inventory,
 			entries: [],
 			summary: logger.summarize(),
-			note: 'No pending source items found.',
+			warnings: inventory.warnings,
+			note: inventory.queued === 0
+				? 'No queued source items found. Inventory and stranded warnings shown below.'
+				: 'No queued source items found.',
 		};
 	}
 
@@ -641,9 +1227,11 @@ async function handleSourceItemsRun(
 		});
 
 		return {
+			inventory,
 			entries: logger.getEntries(),
 			summary: logger.summarize(),
 			sourceItemCount: jobs.length,
+			warnings: inventory.warnings,
 			results,
 		};
 	} finally {
@@ -745,7 +1333,7 @@ function createPipelineJobDeps(db: ZenDatabase) {
 	return {
 		findBySourceKey: async (sourceKey: string) => {
 			const [row] = await db
-				.select({ id: pipelineJob.id, status: pipelineJob.status })
+				.select({ id: pipelineJob.id, status: pipelineJob.status, state: pipelineJob.state, phase: pipelineJob.phase })
 				.from(pipelineJob)
 				.where(eq(pipelineJob.sourceKey, sourceKey))
 				.limit(1);
@@ -831,6 +1419,12 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 		.option('--status <status>')
 		.option('--concurrency <concurrency>', 'Parallel worker count', '5')
 		.option('--source-items', 'Process pending pipeline_jobs from DB instead of catalog.json', false)
+		.option('--force-generate', 'Force a sheet generation from a source item', false)
+		.option('--arrangement-id <id>', 'Arrangement id to force-generate from')
+		.option('--reason <text>', 'Reason for force generation')
+		.option('--publish', 'Publish forced output immediately', false)
+		.option('--retry-failed', 'Requeue failed pipeline jobs before processing source items', false)
+		.option('--requeue-stranded', 'Requeue stranded pipeline jobs before processing source items', false)
 		.action(async (rawOptions) => {
 			const options: RunCommandOptions = {
 				source: rawOptions.source,
@@ -840,7 +1434,13 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 				skipRevalidation: Boolean(rawOptions.skipRevalidation),
 				status: rawOptions.status,
 				concurrency: Number(rawOptions.concurrency ?? 5),
-				sourceItems: Boolean(rawOptions.sourceItems),
+				sourceItems: Boolean(rawOptions.sourceItems || rawOptions.retryFailed || rawOptions.requeueStranded),
+				forceGenerate: Boolean(rawOptions.forceGenerate),
+				arrangementId: rawOptions.arrangementId,
+				reason: rawOptions.reason,
+				publish: Boolean(rawOptions.publish),
+				retryFailed: Boolean(rawOptions.retryFailed),
+				requeueStranded: Boolean(rawOptions.requeueStranded),
 			};
 
 			if (options.file && options.source) {
@@ -855,6 +1455,18 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 				throw new Error('--file cannot be combined with --source-items.');
 			}
 
+			if (options.forceGenerate && !options.sourceItems) {
+				throw new Error('--force-generate requires --source-items.');
+			}
+
+			if (options.forceGenerate && !options.arrangementId) {
+				throw new Error('--arrangement-id is required with --force-generate.');
+			}
+
+			if (options.forceGenerate && !options.reason?.trim()) {
+				throw new Error('--reason must be a non-empty string when using --force-generate.');
+			}
+
 			if (options.status && !VALID_STATUS_FILTERS.includes(options.status as (typeof VALID_STATUS_FILTERS)[number])) {
 				throw new Error(`--status must be one of: ${VALID_STATUS_FILTERS.join(', ')}.`);
 			}
@@ -865,6 +1477,10 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 
 			if (options.concurrency <= 0 || Number.isNaN(options.concurrency)) {
 				throw new Error('--concurrency must be a positive number.');
+			}
+
+			if (options.retryFailed && options.requeueStranded) {
+				throw new Error('--retry-failed cannot be combined with --requeue-stranded.');
 			}
 
 			const result = await deps.runCommand(options);
@@ -878,6 +1494,7 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 		.option('--timing-x <seconds>', 'Override click-to-download delay in seconds')
 		.option('--timing-y <seconds>', 'Override inter-variant interval in seconds')
 		.option('--timing-z <seconds>', 'Override inter-work interval in seconds')
+		.option('--matching-window <seconds>', 'Override maximum file/export timestamp delta allowed for matching')
 		.option('--limit <n>', 'Maximum records to process')
 		.option('--dry-run', 'Run all stages but skip DB writes and uploads', false)
 		.action(async (rawOptions) => {
@@ -898,6 +1515,7 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 				timingX: rawOptions.timingX !== undefined ? Number(rawOptions.timingX) : undefined,
 				timingY: rawOptions.timingY !== undefined ? Number(rawOptions.timingY) : undefined,
 				timingZ: rawOptions.timingZ !== undefined ? Number(rawOptions.timingZ) : undefined,
+				maxMatchingWindowSeconds: rawOptions.matchingWindow !== undefined ? Number(rawOptions.matchingWindow) : undefined,
 				limit: rawOptions.limit ? Number(rawOptions.limit) : undefined,
 				dryRun: Boolean(rawOptions.dryRun),
 			};
@@ -914,12 +1532,20 @@ export async function runCli(argv = process.argv.slice(2), dependencies?: CliDep
 				throw new Error('--timing-z must be a positive number.');
 			}
 
+			if (
+				options.maxMatchingWindowSeconds !== undefined &&
+				(options.maxMatchingWindowSeconds <= 0 || Number.isNaN(options.maxMatchingWindowSeconds))
+			) {
+				throw new Error('--matching-window must be a positive number.');
+			}
+
 			if (options.limit !== undefined && (options.limit <= 0 || Number.isNaN(options.limit))) {
 				throw new Error('--limit must be a positive number.');
 			}
 
 			const result = await deps.importCommand(options);
-			deps.stdout(JSON.stringify(result, null, 2));
+			const { matchedFileDetails, unmatchedLocalFileDetails, unmatchedExportVariantDetails, ...resultWithoutDetails } = result as ImportStats;
+			deps.stdout(JSON.stringify({ ...resultWithoutDetails, summary: buildImportSummary(result as ImportStats) }, null, 2));
 		});
 
 	program.command('stats').action(async () => {

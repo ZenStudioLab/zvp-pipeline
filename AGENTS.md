@@ -7,7 +7,7 @@ Workspace-local operating notes for `pipeline/`. Follow the repo root `AGENTS.md
 This workspace owns two linked but distinct paths:
 
 1. **Import flow** — `scraper-export.json` + downloaded MIDI files → assets, works, arrangements, pipeline jobs, import audit
-2. **Run flow** — source MIDI inputs / pending jobs → convert, score, deduplicate, enrich, publish
+2. **Run flow** — source MIDI inputs / queued jobs → convert, score, deduplicate, enrich, publish
 
 Do not assume this workspace is only catalog-driven or only freemidi-oriented.
 

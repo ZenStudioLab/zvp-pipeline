@@ -140,6 +140,11 @@ export type PublisherInput = {
   normalizedKey: string;
   nextVersionCount: number;
   dryRun: boolean;
+  generationMode?: "standard" | "forced";
+  forcePublish?: boolean;
+  forcedAt?: Date | null;
+  forceReason?: string | null;
+  forceContext?: Record<string, unknown> | null;
   /** Import provenance — set for imported sheets only. */
   workId?: string | null;
   arrangementId?: string | null;
